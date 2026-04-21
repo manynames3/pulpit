@@ -16,12 +16,12 @@ resource "aws_lambda_function" "ingest" {
 
   environment {
     variables = {
-      YOUTUBE_CHANNEL_ID  = var.youtube_channel_id
-      TRANSCRIPT_BUCKET   = aws_s3_bucket.transcripts.bucket
+      YOUTUBE_CHANNEL_ID = var.youtube_channel_id
+      TRANSCRIPT_BUCKET  = aws_s3_bucket.transcripts.bucket
       # SSM path — Lambda fetches the actual key value at runtime
       # API key is never stored in env vars, code, or git
-      SSM_PARAMETER_NAME  = aws_ssm_parameter.youtube_api_key.name
-      ENVIRONMENT         = var.environment
+      SSM_PARAMETER_NAME = aws_ssm_parameter.youtube_api_key.name
+      ENVIRONMENT        = var.environment
     }
   }
 

@@ -16,13 +16,13 @@ resource "aws_lambda_function" "query" {
 
   environment {
     variables = {
-      BEDROCK_MODEL_ID    = var.bedrock_model_id
-      KNOWLEDGE_BASE_ID   = var.knowledge_base_id
-      GUARDRAIL_ID        = aws_bedrock_guardrail.pulpit.guardrail_id
-      GUARDRAIL_VERSION   = aws_bedrock_guardrail.pulpit.version
-      DYNAMODB_TABLE      = aws_dynamodb_table.query_log.name
-      PASTOR_CONTACT      = var.pastor_contact
-      ENVIRONMENT         = var.environment
+      BEDROCK_MODEL_ID  = var.bedrock_model_id
+      KNOWLEDGE_BASE_ID = var.knowledge_base_id
+      GUARDRAIL_ID      = aws_bedrock_guardrail.pulpit.guardrail_id
+      GUARDRAIL_VERSION = aws_bedrock_guardrail.pulpit.version
+      DYNAMODB_TABLE    = aws_dynamodb_table.query_log.name
+      PASTOR_CONTACT    = var.pastor_contact
+      ENVIRONMENT       = var.environment
     }
   }
 

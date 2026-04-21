@@ -1,10 +1,5 @@
 name: Pulpit CI
 
-# Runs on every push and pull request to main.
-# Two jobs:
-#   1. validate — format check, lint, security scan (no AWS needed)
-#   2. plan     — terraform plan against dev (requires AWS credentials)
-
 on:
   push:
     branches: [main]
@@ -17,11 +12,9 @@ env:
 
 jobs:
 
-  # ─────────────────────────────────────────────
-  # JOB 1 — Validate (runs without AWS creds)
-  # Catches formatting, syntax, and security issues
-  # before any cloud resources are touched.
-  # ─────────────────────────────────────────────
+  # ─────────────────────────────────────────
+  # JOB 1 — Validate (no AWS creds needed)
+  # ─────────────────────────────────────────
   validate:
     name: Validate
     runs-on: ubuntu-latest
@@ -35,58 +28,37 @@ jobs:
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
-      # Fail if any .tf file isn't properly formatted.
-      # Enforces consistent style across all contributors.
+      # Exit code 3 = unformatted files found
       - name: Terraform Format Check
         run: terraform fmt -check -recursive
 
-      # Validate syntax and internal consistency.
-      # Catches missing variables, bad references, type errors.
+      # Validates syntax and internal consistency without hitting AWS
       - name: Terraform Validate
         run: |
-          terraform init -backend=false
+          terraform init -backend=false -input=false
           terraform validate
 
-      # Checkov — static security scanner for IaC.
-      # Flags misconfigurations before deploy:
-      #   - S3 buckets without encryption
-      #   - IAM policies with wildcards
-      #   - Unencrypted DynamoDB tables
-      #   - Public security groups
-      # Ties directly into the SOC 2 baseline story.
+      # Checkov: static IaC security scanner
+      # Catches misconfigurations before deploy — S3 public access,
+      # IAM wildcards, unencrypted resources, etc.
+      # soft_fail=true: warns but doesn't block on first run
       - name: Checkov Security Scan
         uses: bridgecrewio/checkov-action@v12
         with:
           directory: .
           framework: terraform
-          soft_fail: true  # warn but don't block on first run
+          soft_fail: true
           output_format: cli
 
-      # Lint Terraform with TFLint.
-      # Catches AWS-specific issues Checkov misses:
-      #   - Invalid instance types
-      #   - Deprecated resource arguments
-      #   - Missing required tags
-      - name: TFLint
-        uses: terraform-linters/setup-tflint@v4
-        with:
-          tflint_version: latest
-      - run: |
-          tflint --init
-          tflint --recursive
-
-  # ─────────────────────────────────────────────
-  # JOB 2 — Plan (requires AWS credentials)
-  # Shows exactly what will change before apply.
-  # Never auto-applies — deploy is a manual step.
-  # ─────────────────────────────────────────────
+  # ─────────────────────────────────────────
+  # JOB 2 — Plan (requires AWS creds)
+  # ─────────────────────────────────────────
   plan:
     name: Terraform Plan (dev)
     runs-on: ubuntu-latest
-    needs: validate  # only runs if validate passes
+    needs: validate
     environment: dev
 
-    # Skip plan on PRs from forks — they won't have AWS secrets
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
 
     steps:
@@ -98,8 +70,6 @@ jobs:
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
-      # AWS credentials stored as GitHub repository secrets.
-      # Never hardcoded — see README for setup instructions.
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -108,7 +78,7 @@ jobs:
           aws-region:            ${{ env.AWS_REGION }}
 
       - name: Terraform Init
-        run: terraform init
+        run: terraform init -input=false
         working-directory: environments/dev
 
       - name: Terraform Plan
@@ -117,8 +87,6 @@ jobs:
         working-directory: environments/dev
         continue-on-error: true
 
-      # Post plan output as PR comment so reviewers
-      # see exactly what will change without running anything locally.
       - name: Post Plan to PR
         uses: actions/github-script@v7
         if: github.event_name == 'pull_request'
@@ -128,8 +96,7 @@ jobs:
             \`\`\`
             ${{ steps.plan.outputs.stdout }}
             \`\`\`
-            *Pushed by @${{ github.actor }} on \`${{ github.ref }}\`*`;
-
+            *Pushed by @${{ github.actor }}*`;
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,

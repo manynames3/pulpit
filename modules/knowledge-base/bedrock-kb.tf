@@ -23,8 +23,8 @@ resource "aws_iam_role_policy" "bedrock_kb" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect   = "Allow"
-        Action   = ["s3:GetObject", "s3:ListBucket"]
+        Effect = "Allow"
+        Action = ["s3:GetObject", "s3:ListBucket"]
         Resource = [
           var.s3_bucket_arn,
           "${var.s3_bucket_arn}/*"

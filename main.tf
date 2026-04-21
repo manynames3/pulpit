@@ -34,10 +34,10 @@ module "knowledge_base" {
 }
 
 module "query" {
-  source              = "./modules/query"
-  environment         = var.environment
-  bedrock_model_id    = var.bedrock_model_id
-  knowledge_base_id   = module.knowledge_base.knowledge_base_id
-  church_name         = var.church_name
-  pastor_contact      = var.pastor_contact
+  source            = "./modules/query"
+  environment       = var.environment
+  bedrock_model_id  = var.bedrock_model_id
+  knowledge_base_id = module.knowledge_base.knowledge_base_id
+  church_name       = var.church_name
+  pastor_contact    = var.pastor_contact
 }
