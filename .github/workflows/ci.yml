@@ -9,6 +9,7 @@ on:
 env:
   TF_VERSION: "1.7.0"
   AWS_REGION:  "us-east-1"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
 
@@ -41,7 +42,6 @@ jobs:
       # Checkov: static IaC security scanner
       # Catches misconfigurations before deploy — S3 public access,
       # IAM wildcards, unencrypted resources, etc.
-      # soft_fail=true: warns but doesn't block on first run
       - name: Checkov Security Scan
         uses: bridgecrewio/checkov-action@v12
         with:
