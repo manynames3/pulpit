@@ -1,2 +1,2 @@
-youtube-transcript-api==0.6.2
+youtube-transcript-api==1.2.4
 requests==2.31.0

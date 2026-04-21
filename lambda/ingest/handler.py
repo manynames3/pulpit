@@ -99,19 +99,25 @@ def get_new_videos(api_key, max_results=20):
 def fetch_transcript(video_id):
     """
     Pull free YouTube captions — no API key needed.
-    youtube-transcript-api is pure Python — no compiled extensions.
-    Prefers English, falls back to Korean for bilingual content.
+    youtube-transcript-api v1.x uses instance-based API.
+    Atlanta Bethel sermons are Korean — fetches Korean auto-generated captions.
+    Falls back to any available language if Korean not found.
     """
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
-        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+        api = YouTubeTranscriptApi()
+        transcript_list = api.list(video_id)
+
+        # Try Korean first (Atlanta Bethel is a Korean church)
+        # Fall back to English, then any available language
         try:
-            transcript = transcript_list.find_transcript(["en"])
+            transcript = transcript_list.find_transcript(["ko", "en"])
         except Exception:
-            transcript = transcript_list.find_transcript(["ko"])
+            # Take whatever is available
+            transcript = next(iter(transcript_list))
 
         segments = transcript.fetch()
-        return " ".join([seg["text"] for seg in segments])
+        return " ".join([seg.text for seg in segments])
     except Exception as e:
         print(f"No transcript for {video_id}: {e}")
         return None
