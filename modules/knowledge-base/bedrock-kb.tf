@@ -1,16 +1,15 @@
-# Bedrock Knowledge Base with native vector store.
-#
-# Why not OpenSearch Serverless:
-# OpenSearch Serverless has a minimum charge of ~$175/month regardless
-# of usage — completely inappropriate for a non-profit church deployment.
-#
-# Bedrock's native vector store (BEDROCK_MANAGED) has zero idle cost.
-# You pay only for:
-#   - Embedding at ingest: ~$0.10 per sermon (one-time, using Titan Embeddings)
-#   - Queries: fractions of a cent per search
-#
-# Upgrade path: migrate to OpenSearch Serverless only if query volume
-# exceeds ~50,000/month and you need advanced vector search features.
+# Bedrock Knowledge Base with S3 vector store.
+# 
+# Why S3 Vector Store:
+# OpenSearch Serverless (~$175/mo) is too expensive for this use case.
+# By using S3 as the storage backend for vectors, we keep costs to ~$0. 
+
+# 1. ADD THIS: A new bucket to store the actual vector indexes
+resource "aws_s3_bucket" "vector_store" {
+  bucket        = "pulpit-vectors-${var.environment}-${data.aws_caller_identity.current.account_id}"
+  force_destroy = true 
+  tags          = local.tags
+}
 
 resource "aws_iam_role" "bedrock_kb" {
   name = "pulpit-bedrock-kb-${var.environment}"
@@ -42,10 +41,19 @@ resource "aws_iam_role_policy" "bedrock_kb" {
           "${var.s3_bucket_arn}/*"
         ]
       },
+      # ADDED: Permissions for the new vector storage bucket
+      {
+        Effect = "Allow"
+        Action = ["s3:GetObject", "s3:PutObject", "s3:ListBucket", "s3:DeleteObject"]
+        Resource = [
+          aws_s3_bucket.vector_store.arn,
+          "${aws_s3_bucket.vector_store.arn}/*"
+        ]
+      },
       {
         Effect   = "Allow"
         Action   = ["bedrock:InvokeModel"]
-        Resource = "*"
+        Resource = "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-embed-text-v2:0"
       }
     ]
   })
@@ -58,16 +66,16 @@ resource "aws_bedrockagent_knowledge_base" "sermons" {
   knowledge_base_configuration {
     type = "VECTOR"
     vector_knowledge_base_configuration {
-      # Titan Embeddings v2 — included in Bedrock, no extra cost beyond
-      # the per-token embedding charge (~$0.10 per sermon, one-time)
       embedding_model_arn = "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-embed-text-v2:0"
     }
   }
 
-  # BEDROCK_MANAGED = AWS manages the vector store internally.
-  # Zero idle cost. No OpenSearch cluster. No $175/month minimum.
+  # UPDATED: Changed from BEDROCK_MANAGED_VECTOR_STORE to S3
   storage_configuration {
-    type = "BEDROCK_MANAGED_VECTOR_STORE"
+    type = "S3"
+    s3_configuration {
+      bucket_name = aws_s3_bucket.vector_store.id
+    }
   }
 
   tags = local.tags
@@ -84,9 +92,6 @@ resource "aws_bedrockagent_data_source" "transcripts" {
     }
   }
 
-  # Chunking strategy: fixed size with overlap.
-  # 300 tokens per chunk = roughly one sermon paragraph.
-  # 20% overlap ensures context isn't lost at chunk boundaries.
   vector_ingestion_configuration {
     chunking_configuration {
       chunking_strategy = "FIXED_SIZE"
@@ -105,3 +110,6 @@ locals {
     ManagedBy   = "terraform"
   }
 }
+
+# Need this for the bucket naming
+data "aws_caller_identity" "current" {}
