@@ -48,6 +48,15 @@ def lambda_handler(event, context):
     for video in new_videos:
         video_id = video["id"]
 
+        # Only ingest 2026 and later sermons.
+        # Keeps embedding costs minimal during pilot (~$0.10/sermon).
+        # To include full archive, remove this check and re-run.
+        published_year = int(video["published_at"][:4])
+        if published_year < 2026:
+            print(f"Skipping pre-2026 video: {video_id} ({video['published_at'][:10]})")
+            skipped.append(video_id)
+            continue
+
         if transcript_exists(video_id):
             skipped.append(video_id)
             continue
