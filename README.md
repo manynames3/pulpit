@@ -470,3 +470,30 @@ Clearpath Property Group · Visual Impact Studios · Suwanee, GA
 ## License
 
 MIT — deploy it, fork it, adapt it for your church.
+
+---
+
+## CI/CD Pipeline
+
+[![Pulpit CI](https://github.com/manynames3/pulpit/actions/workflows/ci.yml/badge.svg)](https://github.com/manynames3/pulpit/actions/workflows/ci.yml)
+
+Every push and pull request runs:
+
+| Step | Tool | Purpose |
+|---|---|---|
+| Format check | `terraform fmt` | Consistent code style |
+| Syntax validate | `terraform validate` | Catch errors before deploy |
+| Security scan | Checkov | Flag IaC misconfigurations (SOC 2 alignment) |
+| Lint | TFLint | AWS-specific best practices |
+| Plan | `terraform plan` | Preview changes, posted as PR comment |
+
+Deploy is always a **manual step** — CI never auto-applies.
+
+### GitHub Secrets required for plan job
+
+```
+AWS_ACCESS_KEY_ID      — IAM user with limited deploy permissions
+AWS_SECRET_ACCESS_KEY  — corresponding secret
+```
+
+To add secrets: GitHub repo → Settings → Secrets and variables → Actions → New repository secret
