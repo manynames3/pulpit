@@ -12,7 +12,6 @@ module "ingestion" {
   source             = "./modules/ingestion"
   environment        = var.environment
   youtube_channel_id = var.youtube_channel_id
-  youtube_api_key    = var.youtube_api_key
   ingest_schedule    = var.ingest_schedule
 }
 
