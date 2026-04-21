@@ -1,0 +1,9 @@
+environment        = "dev"
+aws_region         = "us-east-1"
+church_name        = "Atlanta Bethel Church"
+pastor_contact     = "Please contact our pastoral team at church@atlantabethel.org"
+youtube_channel_id = "YOUR_YOUTUBE_CHANNEL_ID"
+youtube_api_key    = "YOUR_YOUTUBE_API_KEY"
+bedrock_model_id   = "amazon.nova-lite-v1:0"
+enable_guardduty   = false
+ingest_schedule    = "cron(0 6 ? * MON *)"

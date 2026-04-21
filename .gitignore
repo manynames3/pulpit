@@ -1,0 +1,20 @@
+# Terraform state — never commit
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+*.tfplan
+
+# Lambda build artifacts
+*.zip
+__pycache__/
+*.pyc
+
+# Environment secrets — use AWS SSM or Secrets Manager in prod
+*.tfvars.local
+.env
+
+# IDE
+.DS_Store
+.idea/
+.vscode/
