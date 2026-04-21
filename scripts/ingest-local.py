@@ -54,7 +54,6 @@ def get_videos():
             "channelId":  CHANNEL_ID,
             "order":      "date",
             "type":       "video",
-            "eventType":  "completed",
             "maxResults": 50,
             "key":        API_KEY
         }
