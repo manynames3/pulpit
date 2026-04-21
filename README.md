@@ -394,3 +394,190 @@ Clearpath Property Group · Visual Impact Studios · Suwanee, GA
 ## License
 
 MIT — deploy it, fork it, adapt it for your church.
+
+---
+
+## Deployment Troubleshooting Log
+
+This section documents every real problem encountered during deployment and how each was resolved. This is not a polished retrospective — it's the actual sequence of failures, diagnoses, and pivots.
+
+---
+
+### Issue 1 — Terraform Format Check (CI exit code 3)
+
+**Symptom:** GitHub Actions failing immediately with `Terraform exited with code 3`.
+
+**Diagnosis:** Exit code 3 from `terraform fmt -check` means unformatted files were found. The `.tf` files were generated programmatically and never run through `terraform fmt`.
+
+**Fix:** Ran `terraform fmt -recursive` locally, committed the formatted files.
+
+**Lesson:** Always run `terraform fmt` before committing generated Terraform code.
+
+---
+
+### Issue 2 — Duplicate `required_providers` Block
+
+**Symptom:** `terraform validate` failing with `Duplicate required providers configuration`.
+
+**Diagnosis:** Both `main.tf` and the newly added `versions.tf` defined `required_providers`. Terraform only allows one per module.
+
+**Fix:** Removed the `required_providers` block from `main.tf`, keeping it only in `versions.tf`.
+
+---
+
+### Issue 3 — `BEDROCK_MANAGED_VECTOR_STORE` Not a Valid Storage Type
+
+**Symptom:** `terraform apply` failing with `ValidationException: Value 'BEDROCK_MANAGED_VECTOR_STORE' failed to satisfy enum value set`.
+
+**Diagnosis:** This storage type doesn't exist in the Terraform AWS provider. The valid options are `RDS, OPENSEARCH_SERVERLESS, PINECONE, MONGO_DB_ATLAS, NEPTUNE_ANALYTICS, REDIS_ENTERPRISE_CLOUD`. All of them either have significant idle costs or introduce third-party dependencies.
+
+**What we tried first:** Switched to `S3` as the storage backend. Also invalid — not in the enum.
+
+**Final decision:** Removed Bedrock Knowledge Base entirely for the v1 pilot. For ~16 sermons (2026-only), a vector database is overkill. The query Lambda loads transcript JSONs directly from S3 and passes relevant ones to Claude. Scales to ~50 sermons before context becomes a concern.
+
+**Documented upgrade path:** When the archive grows beyond 50 sermons:
+- Option A: OpenSearch Serverless (~$175/month, best AWS-native)
+- Option B: Pinecone free tier (2GB free forever, data leaves AWS)
+- Option C: RDS with pgvector (free 12 months, ~$15/month after)
+
+**Lesson:** Not every AWS feature has Terraform support yet. Always verify the provider schema before designing around a feature.
+
+---
+
+### Issue 4 — Bedrock Guardrail Provider Bug
+
+**Symptom:** `Provider returned invalid result object after apply` on `aws_bedrock_guardrail.pulpit.description`.
+
+**Diagnosis:** Known AWS provider bug. When `description` is omitted from `aws_bedrock_guardrail`, the provider returns an unknown value after apply which Terraform can't handle. The resource gets marked as tainted.
+
+**Fix:** Added `description` field to the guardrail resource. Resource was destroyed and recreated cleanly on next apply.
+
+---
+
+### Issue 5 — Lambda Missing Dependencies (InvalidELFHeader)
+
+**Symptom:** Lambda invocation failing with `Unable to import module 'handler': /var/task/cryptography/hazmat/bindings/_rust.abi3.so: invalid ELF header`.
+
+**Root cause:** Two problems stacked:
+1. Lambda zip only contained `handler.py` — no third-party libraries included
+2. `google-api-python-client` pulls in `cryptography` which has compiled C extensions (`.so` files) built for Mac ARM — incompatible with Lambda's Linux x86_64 runtime
+
+**What we tried first:** Created `scripts/build-lambda.sh` to package dependencies with `pip install --target`. Still failed because Mac ARM binaries don't run on Linux x86_64.
+
+**Considered:** Using Docker with the official Lambda container (`public.ecr.aws/lambda/python:3.12`) to build Linux-compatible binaries. Rejected — adds Docker as a requirement for a simple deploy step.
+
+**Final fix:** Removed `google-api-python-client` entirely. Replaced with direct HTTP calls to YouTube Data API v3 using `requests`. The `requests` library is pure Python — no compiled extensions, no platform issues. Same API calls, same results, no Docker needed.
+
+**Lesson:** Avoid libraries with compiled C extensions in Lambda unless you have a consistent Linux build environment. Pure Python libraries are always portable.
+
+---
+
+### Issue 6 — CORS Blocking Browser Requests
+
+**Symptom:** Frontend showing `CONNECTION ERROR: Failed to fetch` when calling the API.
+
+**First diagnosis (wrong):** API Gateway CORS not configured. Added OPTIONS method with CORS headers via Terraform, redeployed.
+
+**Actual root cause:** The HTML file was being opened as `file://` directly from the filesystem. Browsers treat `file://` as `null` origin. CORS policy blocks `null` origin even when `Access-Control-Allow-Origin: *` is set — this is a browser security restriction, not an API Gateway issue.
+
+**Fix:** Serve the file over HTTP instead of opening it as a file:
+```bash
+cd ~/pulpit/frontend
+python3 -m http.server 8080
+# open http://localhost:8080
+```
+
+**Lesson:** Never test CORS from `file://`. Always use a local HTTP server.
+
+---
+
+### Issue 7 — YouTube Blocking AWS Lambda IPs
+
+**Symptom:** `youtube-transcript-api` returning `YouTube is blocking requests from your IP` on every video. Lambda invocations consistently returning 0 ingested.
+
+**Root cause:** YouTube actively blocks requests from known cloud provider IP ranges (AWS, GCP, Azure). `youtube-transcript-api` scrapes YouTube's internal transcript endpoint — not an official API — so it gets blocked at the IP level. This is a fundamental limitation, not a configuration issue.
+
+**What we tried:**
+1. Filtering for `eventType=completed` (live streams) — made no difference, IP is blocked regardless of video type
+2. Updating to `youtube-transcript-api` v1.2.4 with new instance-based API — fixed a different bug but didn't resolve the IP block
+
+**Confirmed working locally:** Running the same `youtube-transcript-api` code from a Mac with a residential IP works correctly. Korean auto-generated captions (`ko`, `generated: True`) are available on Atlanta Bethel's videos.
+
+**Options evaluated:**
+- YouTube Official Captions API — requires OAuth authorization from the channel owner (the church). Not available for this deployment.
+- Proxy services — adds cost and complexity, introduces a third-party dependency
+- Running Lambda in a VPC with NAT Gateway — NAT Gateway IPs are still AWS IPs, still blocked
+- Cookies-based auth — YouTube explicitly warns this will result in account ban
+
+**Final decision:** Run ingestion locally from your Mac using `scripts/ingest-local.py`. Residential IP is never blocked. Script uploads transcripts directly to S3. Run it manually after Sunday service.
+
+**Long-term upgrade path:** If the church authorizes the YouTube app, switch to the official YouTube Captions API (`captions.download`) which is not IP-blocked. Until then, local ingestion is the correct solution.
+
+**Lesson:** `youtube-transcript-api` is a scraper, not an official API. It works from residential IPs but is unreliable from cloud infrastructure. For production systems, always use official APIs.
+
+---
+
+### Issue 8 — `youtube-transcript-api` v1.x Breaking API Change
+
+**Symptom:** `type object 'YouTubeTranscriptApi' has no attribute 'list_transcripts'` when testing locally.
+
+**Root cause:** The library changed from class-based static methods to instance-based methods in v1.x.
+
+**Before (v0.6.x):**
+```python
+transcripts = YouTubeTranscriptApi.list_transcripts(video_id)
+```
+
+**After (v1.x):**
+```python
+api = YouTubeTranscriptApi()
+transcripts = api.list(video_id)
+```
+
+Also: individual segment text changed from `segment["text"]` to `segment.text`.
+
+**Fix:** Updated `requirements.txt` to pin `youtube-transcript-api==1.2.4` and updated all call sites to use the new instance API.
+
+---
+
+## Ingestion Architecture — Final State
+
+The ingestion design went through three significant pivots:
+
+**Original design:** EventBridge → Lambda → AWS Transcribe → S3
+Rejected: AWS Transcribe costs $47/year. YouTube provides free captions.
+
+**Second design:** EventBridge → Lambda → `youtube-transcript-api` → S3
+Rejected: YouTube blocks Lambda's AWS IP addresses. Ingestion always returns 0.
+
+**Final design:** Local script (`scripts/ingest-local.py`) → `youtube-transcript-api` → S3
+Works: Residential IP is not blocked by YouTube. Run manually after Sunday service.
+
+The rest of the system (query Lambda, API Gateway, Cognito, Guardrails) is fully serverless and unaffected. Only ingestion runs locally.
+
+---
+
+## Running Ingestion
+
+```bash
+# Install dependencies (one time)
+pip3 install youtube-transcript-api requests boto3 --break-system-packages
+
+# Run after Sunday service
+cd ~/pulpit
+python3 scripts/ingest-local.py
+```
+
+Output:
+```
+Pulpit Local Ingest — 2026-04-21 07:30
+Channel: UCchY0Iagf_2cCP0RGVwQ-FA
+Bucket:  pulpit-transcripts-dev-636305658578
+────────────────────────────────────────────────────────────
+  ✅    2026-04-19  주일 4부 예배ㅣ정수한 목사ㅣ사도행전 17장 22-25절
+  ✅    2026-04-12  주일 2부 예배ㅣ이혜진 담임목사ㅣ요한복음 11장
+  EXIST 2026-04-05  주일 4부 예배 (already indexed)
+────────────────────────────────────────────────────────────
+Ingested: 2  |  Skipped: 1  |  Errors: 0
+```
+
