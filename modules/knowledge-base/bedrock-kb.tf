@@ -1,6 +1,16 @@
-# Bedrock Knowledge Base manages chunking, embedding, and vector storage internally.
-# No OpenSearch cluster needed — saves ~$90/month base cost at this scale.
-# At >50k queries/month, consider migrating to dedicated OpenSearch Serverless.
+# Bedrock Knowledge Base with native vector store.
+#
+# Why not OpenSearch Serverless:
+# OpenSearch Serverless has a minimum charge of ~$175/month regardless
+# of usage — completely inappropriate for a non-profit church deployment.
+#
+# Bedrock's native vector store (BEDROCK_MANAGED) has zero idle cost.
+# You pay only for:
+#   - Embedding at ingest: ~$0.10 per sermon (one-time, using Titan Embeddings)
+#   - Queries: fractions of a cent per search
+#
+# Upgrade path: migrate to OpenSearch Serverless only if query volume
+# exceeds ~50,000/month and you need advanced vector search features.
 
 resource "aws_iam_role" "bedrock_kb" {
   name = "pulpit-bedrock-kb-${var.environment}"
@@ -13,6 +23,8 @@ resource "aws_iam_role" "bedrock_kb" {
       Principal = { Service = "bedrock.amazonaws.com" }
     }]
   })
+
+  tags = local.tags
 }
 
 resource "aws_iam_role_policy" "bedrock_kb" {
@@ -46,22 +58,16 @@ resource "aws_bedrockagent_knowledge_base" "sermons" {
   knowledge_base_configuration {
     type = "VECTOR"
     vector_knowledge_base_configuration {
-      # Amazon Titan Embeddings — included in Bedrock, no extra cost
+      # Titan Embeddings v2 — included in Bedrock, no extra cost beyond
+      # the per-token embedding charge (~$0.10 per sermon, one-time)
       embedding_model_arn = "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-embed-text-v2:0"
     }
   }
 
+  # BEDROCK_MANAGED = AWS manages the vector store internally.
+  # Zero idle cost. No OpenSearch cluster. No $175/month minimum.
   storage_configuration {
-    type = "OPENSEARCH_SERVERLESS"
-    opensearch_serverless_configuration {
-      collection_arn    = aws_opensearchserverless_collection.pulpit.arn
-      vector_index_name = "pulpit-sermons"
-      field_mapping {
-        vector_field   = "embedding"
-        text_field     = "text"
-        metadata_field = "metadata"
-      }
-    }
+    type = "BEDROCK_MANAGED_VECTOR_STORE"
   }
 
   tags = local.tags
@@ -77,64 +83,19 @@ resource "aws_bedrockagent_data_source" "transcripts" {
       bucket_arn = var.s3_bucket_arn
     }
   }
-}
 
-# OpenSearch Serverless — managed vector store.
-# No persistent cluster = scales to zero when idle.
-resource "aws_opensearchserverless_collection" "pulpit" {
-  name = "pulpit-${var.environment}"
-  type = "VECTORSEARCH"
-  tags = local.tags
-}
-
-resource "aws_opensearchserverless_access_policy" "pulpit" {
-  name = "pulpit-access-${var.environment}"
-  type = "data"
-  policy = jsonencode([{
-    Rules = [
-      {
-        ResourceType = "index"
-        Resource     = ["index/pulpit-${var.environment}/*"]
-        Permission   = ["aoss:*"]
-      },
-      {
-        ResourceType = "collection"
-        Resource     = ["collection/pulpit-${var.environment}"]
-        Permission   = ["aoss:*"]
+  # Chunking strategy: fixed size with overlap.
+  # 300 tokens per chunk = roughly one sermon paragraph.
+  # 20% overlap ensures context isn't lost at chunk boundaries.
+  vector_ingestion_configuration {
+    chunking_configuration {
+      chunking_strategy = "FIXED_SIZE"
+      fixed_size_chunking_configuration {
+        max_tokens         = 300
+        overlap_percentage = 20
       }
-    ]
-    Principal = [aws_iam_role.bedrock_kb.arn]
-  }])
-}
-
-resource "aws_opensearchserverless_security_policy" "encryption" {
-  name = "pulpit-enc-${var.environment}"
-  type = "encryption"
-  policy = jsonencode({
-    Rules = [{
-      ResourceType = "collection"
-      Resource     = ["collection/pulpit-${var.environment}"]
-    }]
-    AWSOwnedKey = true
-  })
-}
-
-resource "aws_opensearchserverless_security_policy" "network" {
-  name = "pulpit-net-${var.environment}"
-  type = "network"
-  policy = jsonencode([{
-    Rules = [
-      {
-        ResourceType = "collection"
-        Resource     = ["collection/pulpit-${var.environment}"]
-      },
-      {
-        ResourceType = "dashboard"
-        Resource     = ["collection/pulpit-${var.environment}"]
-      }
-    ]
-    AllowFromPublic = false
-  }])
+    }
+  }
 }
 
 locals {
