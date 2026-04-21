@@ -11,14 +11,16 @@ resource "aws_lambda_function" "ingest" {
   runtime          = "python3.12"
   filename         = data.archive_file.ingest.output_path
   source_code_hash = data.archive_file.ingest.output_base64sha256
-  timeout          = 300  # 5 min — large channels may have many new videos
+  timeout          = 300
   memory_size      = 256
 
   environment {
     variables = {
       YOUTUBE_CHANNEL_ID  = var.youtube_channel_id
-      YOUTUBE_API_KEY     = var.youtube_api_key
       TRANSCRIPT_BUCKET   = aws_s3_bucket.transcripts.bucket
+      # SSM path — Lambda fetches the actual key value at runtime
+      # API key is never stored in env vars, code, or git
+      SSM_PARAMETER_NAME  = aws_ssm_parameter.youtube_api_key.name
       ENVIRONMENT         = var.environment
     }
   }
@@ -26,7 +28,6 @@ resource "aws_lambda_function" "ingest" {
   tags = local.tags
 }
 
-# Least-privilege IAM role for ingest Lambda
 resource "aws_iam_role" "ingest_lambda" {
   name = "pulpit-ingest-lambda-${var.environment}"
 
@@ -50,13 +51,11 @@ resource "aws_iam_role_policy" "ingest_lambda" {
     Version = "2012-10-17"
     Statement = [
       {
-        # Write transcripts to S3 only
         Effect   = "Allow"
-        Action   = ["s3:PutObject", "s3:GetObject"]
+        Action   = ["s3:PutObject", "s3:GetObject", "s3:HeadObject"]
         Resource = "${aws_s3_bucket.transcripts.arn}/transcripts/*"
       },
       {
-        # CloudWatch Logs for Lambda
         Effect = "Allow"
         Action = [
           "logs:CreateLogGroup",

@@ -7,6 +7,12 @@ Why YouTube transcripts instead of AWS Transcribe:
 - YouTube auto-generates free captions for virtually all uploaded videos
 - AWS Transcribe costs ~$0.02/min = ~$0.90 per 45-min sermon = ~$47/year
 - youtube-transcript-api pulls captions with zero cost and zero quota impact
+
+Why SSM for the API key:
+- Secrets must never be hardcoded or committed to git
+- SSM SecureString encrypts at rest with KMS
+- Lambda IAM role grants access to this specific parameter only
+- Rotating the key requires zero code changes — update SSM value only
 """
 
 import json
@@ -17,25 +23,31 @@ from datetime import datetime, timezone
 from googleapiclient.discovery import build
 from youtube_transcript_api import YouTubeTranscriptApi
 
-s3 = boto3.client("s3")
+s3  = boto3.client("s3")
+ssm = boto3.client("ssm")
 
-BUCKET          = os.environ["TRANSCRIPT_BUCKET"]
-CHANNEL_ID      = os.environ["YOUTUBE_CHANNEL_ID"]
-YOUTUBE_API_KEY = os.environ["YOUTUBE_API_KEY"]
+BUCKET     = os.environ["TRANSCRIPT_BUCKET"]
+CHANNEL_ID = os.environ["YOUTUBE_CHANNEL_ID"]
+SSM_KEY    = os.environ["SSM_PARAMETER_NAME"]
+
+
+def get_youtube_api_key():
+    """Fetch API key from SSM at runtime — never stored in env vars or code."""
+    response = ssm.get_parameter(Name=SSM_KEY, WithDecryption=True)
+    return response["Parameter"]["Value"]
 
 
 def lambda_handler(event, context):
-    """Entry point — fetch new videos and store transcripts."""
-    youtube = build("youtube", "v3", developerKey=YOUTUBE_API_KEY)
+    youtube_api_key = get_youtube_api_key()
+    youtube = build("youtube", "v3", developerKey=youtube_api_key)
     new_videos = get_new_videos(youtube)
 
     ingested = []
-    skipped = []
+    skipped  = []
 
     for video in new_videos:
         video_id = video["id"]
 
-        # Skip if already ingested
         if transcript_exists(video_id):
             skipped.append(video_id)
             continue
@@ -65,20 +77,22 @@ def get_new_videos(youtube, max_results=10):
 
     return [
         {
-            "id": item["id"]["videoId"],
-            "title": item["snippet"]["title"],
-            "description": item["snippet"]["description"],
+            "id":           item["id"]["videoId"],
+            "title":        item["snippet"]["title"],
+            "description":  item["snippet"]["description"],
             "published_at": item["snippet"]["publishedAt"],
-            "thumbnail": item["snippet"]["thumbnails"].get("high", {}).get("url", "")
         }
         for item in response.get("items", [])
     ]
 
 
 def fetch_transcript(video_id):
-    """Pull free YouTube captions. Returns None if unavailable."""
+    """
+    Pull free YouTube captions — no API key needed for this step.
+    Prefers English, falls back to Korean for bilingual church content.
+    Returns None if no captions available.
+    """
     try:
-        # Prefer English, fall back to Korean
         transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
         try:
             transcript = transcript_list.find_transcript(["en"])
@@ -94,40 +108,41 @@ def fetch_transcript(video_id):
 
 def extract_scripture_references(text):
     """
-    Extract Bible references from video description or title.
-    Churches almost always include scripture in descriptions.
-    Example matches: 'John 3:16', 'Romans 8:28-39', 'Psalm 23'
+    Extract Bible book references from video title and description.
+    Churches almost always include scripture references in descriptions.
     """
-    pattern = r'\b(?:Genesis|Exodus|Leviticus|Numbers|Deuteronomy|Joshua|Judges|Ruth|' \
-              r'Samuel|Kings|Chronicles|Ezra|Nehemiah|Esther|Job|Psalm(?:s)?|Proverbs|' \
-              r'Ecclesiastes|Isaiah|Jeremiah|Lamentations|Ezekiel|Daniel|Hosea|Joel|' \
-              r'Amos|Obadiah|Jonah|Micah|Nahum|Habakkuk|Zephaniah|Haggai|Zechariah|' \
-              r'Malachi|Matthew|Mark|Luke|John|Acts|Romans|Corinthians|Galatians|' \
-              r'Ephesians|Philippians|Colossians|Thessalonians|Timothy|Titus|Philemon|' \
-              r'Hebrews|James|Peter|Jude|Revelation)\s+\d+(?::\d+(?:-\d+)?)?\b'
+    pattern = (
+        r'\b(?:Genesis|Exodus|Leviticus|Numbers|Deuteronomy|Joshua|Judges|Ruth|'
+        r'(?:1|2)\s*Samuel|(?:1|2)\s*Kings|(?:1|2)\s*Chronicles|Ezra|Nehemiah|'
+        r'Esther|Job|Psalms?|Proverbs|Ecclesiastes|Isaiah|Jeremiah|Lamentations|'
+        r'Ezekiel|Daniel|Hosea|Joel|Amos|Obadiah|Jonah|Micah|Nahum|Habakkuk|'
+        r'Zephaniah|Haggai|Zechariah|Malachi|Matthew|Mark|Luke|John|Acts|Romans|'
+        r'(?:1|2)\s*Corinthians|Galatians|Ephesians|Philippians|Colossians|'
+        r'(?:1|2)\s*Thessalonians|(?:1|2)\s*Timothy|Titus|Philemon|Hebrews|'
+        r'James|(?:1|2)\s*Peter|(?:1|2|3)\s*John|Jude|Revelation)'
+        r'\s+\d+(?::\d+(?:-\d+)?)?\b'
+    )
     return list(set(re.findall(pattern, text, re.IGNORECASE)))
 
 
 def build_sermon_record(video, transcript):
-    """Structure sermon data with metadata for KB retrieval quality."""
     description = video.get("description", "")
     return {
-        "sermon_id": video["id"],
-        "title": video["title"],
-        "date": video["published_at"][:10],
-        "youtube_url": f"https://youtube.com/watch?v={video['id']}",
+        "sermon_id":           video["id"],
+        "title":               video["title"],
+        "date":                video["published_at"][:10],
+        "youtube_url":         f"https://youtube.com/watch?v={video['id']}",
         "scripture_references": extract_scripture_references(
             video["title"] + " " + description
         ),
-        "description": description[:500],
-        "language": "en",
-        "transcript": transcript,
-        "ingested_at": datetime.now(timezone.utc).isoformat()
+        "description":         description[:500],
+        "language":            "en",
+        "transcript":          transcript,
+        "ingested_at":         datetime.now(timezone.utc).isoformat()
     }
 
 
 def transcript_exists(video_id):
-    """Check S3 before re-ingesting."""
     try:
         s3.head_object(Bucket=BUCKET, Key=f"transcripts/{video_id}.json")
         return True
@@ -136,7 +151,6 @@ def transcript_exists(video_id):
 
 
 def store_transcript(sermon):
-    """Write sermon JSON to S3."""
     key = f"transcripts/{sermon['date'][:4]}/{sermon['sermon_id']}.json"
     s3.put_object(
         Bucket=BUCKET,
