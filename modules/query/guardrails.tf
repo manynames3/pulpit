@@ -25,11 +25,6 @@ resource "aws_bedrock_guardrail" "pulpit" {
       output_strength = "HIGH"
     }
     filters_config {
-      type            = "SELF_HARM"
-      input_strength  = "HIGH"
-      output_strength = "HIGH"
-    }
-    filters_config {
       type            = "INSULTS"
       input_strength  = "MEDIUM"
       output_strength = "HIGH"
