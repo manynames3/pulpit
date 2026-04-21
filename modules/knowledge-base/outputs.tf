@@ -1,2 +1,3 @@
-output "knowledge_base_id" { value = aws_bedrockagent_knowledge_base.sermons.id }
-output "data_source_id" { value = aws_bedrockagent_data_source.transcripts.data_source_id }
+# knowledge_base_id output removed — KB not deployed in v1 pilot.
+# Query Lambda reads directly from S3 instead.
+# Re-add when upgrading to full vector store.

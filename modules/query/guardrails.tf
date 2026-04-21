@@ -1,13 +1,13 @@
-# Bedrock Guardrails enforces content policy at the API level — not prompt level.
-# Prompt-only guardrails can be bypassed via prompt injection.
-# API-level enforcement cannot be bypassed by user input.
+# Bedrock Guardrails — API-level content enforcement.
+# Cannot be bypassed via prompt injection unlike prompt-only safety instructions.
 
 resource "aws_bedrock_guardrail" "pulpit" {
-  name                      = "pulpit-guardrails-${var.environment}"
+  name        = "pulpit-guardrails-${var.environment}"
+  description = "Pastoral content guardrails for ${var.church_name} sermon search"
+
   blocked_input_messaging   = "I can only answer questions about sermons from ${var.church_name}. For other support, please speak with a pastor."
   blocked_outputs_messaging = "I wasn't able to generate a response. Please try rephrasing your question about our sermon archive."
 
-  # Block harmful content categories
   content_policy_config {
     filters_config {
       type            = "HATE"
@@ -41,20 +41,6 @@ resource "aws_bedrock_guardrail" "pulpit" {
     }
   }
 
-  # Ground responses in sermon content only — no hallucinated theology
-  # Correct block name: contextual_grounding_policy_config (not grounding_policy_config)
-  contextual_grounding_policy_config {
-    filters_config {
-      type      = "GROUNDING"
-      threshold = 0.75
-    }
-    filters_config {
-      type      = "RELEVANCE"
-      threshold = 0.75
-    }
-  }
-
-  # Block off-topic and manipulation attempts
   topic_policy_config {
     topics_config {
       name       = "political-opinions"

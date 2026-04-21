@@ -17,7 +17,7 @@ resource "aws_lambda_function" "query" {
   environment {
     variables = {
       BEDROCK_MODEL_ID  = var.bedrock_model_id
-      KNOWLEDGE_BASE_ID = var.knowledge_base_id
+      TRANSCRIPT_BUCKET = var.transcript_bucket
       GUARDRAIL_ID      = aws_bedrock_guardrail.pulpit.guardrail_id
       GUARDRAIL_VERSION = aws_bedrock_guardrail.pulpit.version
       DYNAMODB_TABLE    = aws_dynamodb_table.query_log.name
@@ -52,11 +52,22 @@ resource "aws_iam_role_policy" "query_lambda" {
     Version = "2012-10-17"
     Statement = [
       {
+        # Read transcripts from S3 directly (v1 pilot — no vector KB)
+        Effect = "Allow"
+        Action = ["s3:GetObject", "s3:ListBucket"]
+        Resource = [
+          "arn:aws:s3:::pulpit-transcripts-${var.environment}-*",
+          "arn:aws:s3:::pulpit-transcripts-${var.environment}-*/*"
+        ]
+      },
+      {
+        # Invoke Claude via Bedrock
         Effect   = "Allow"
-        Action   = ["bedrock:RetrieveAndGenerate", "bedrock:Retrieve", "bedrock:InvokeModel"]
+        Action   = ["bedrock:InvokeModel"]
         Resource = "*"
       },
       {
+        # Apply guardrails
         Effect   = "Allow"
         Action   = ["bedrock:ApplyGuardrail"]
         Resource = aws_bedrock_guardrail.pulpit.guardrail_arn
