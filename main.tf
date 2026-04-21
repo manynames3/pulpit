@@ -16,10 +16,9 @@ module "ingestion" {
 }
 
 module "knowledge_base" {
-  source         = "./modules/knowledge-base"
-  environment    = var.environment
-  s3_bucket_arn  = module.ingestion.transcript_bucket_arn
-  s3_bucket_name = module.ingestion.transcript_bucket_name
+  source        = "./modules/knowledge-base"
+  environment   = var.environment
+  s3_bucket_arn = module.ingestion.transcript_bucket_arn
 }
 
 module "query" {

@@ -1,3 +1,3 @@
 variable "environment" {}
 variable "s3_bucket_arn" {}
-variable "s3_bucket_name" {}
+# s3_bucket_name removed — only ARN needed for KB data source config

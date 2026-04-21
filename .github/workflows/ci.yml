@@ -29,19 +29,14 @@ jobs:
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
-      # Exit code 3 = unformatted files found
       - name: Terraform Format Check
         run: terraform fmt -check -recursive
 
-      # Validates syntax and internal consistency without hitting AWS
       - name: Terraform Validate
         run: |
           terraform init -backend=false -input=false
           terraform validate
 
-      # Checkov: static IaC security scanner
-      # Catches misconfigurations before deploy — S3 public access,
-      # IAM wildcards, unencrypted resources, etc.
       - name: Checkov Security Scan
         uses: bridgecrewio/checkov-action@v12
         with:
@@ -52,6 +47,7 @@ jobs:
 
   # ─────────────────────────────────────────
   # JOB 2 — Plan (requires AWS creds)
+  # Runs from root with dev tfvars
   # ─────────────────────────────────────────
   plan:
     name: Terraform Plan (dev)
@@ -78,12 +74,10 @@ jobs:
 
       - name: Terraform Init
         run: terraform init -input=false
-        working-directory: environments/dev
 
       - name: Terraform Plan
         id: plan
-        run: terraform plan -no-color -input=false
-        working-directory: environments/dev
+        run: terraform plan -no-color -input=false -var-file=environments/dev/terraform.tfvars
         continue-on-error: true
 
       - name: Post Plan to PR
