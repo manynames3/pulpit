@@ -1,7 +1,9 @@
 # 🎙️ Pulpit
 ### Serverless Sermon Intelligence System on AWS Bedrock
 
-> A production-grade RAG (Retrieval-Augmented Generation) system that makes a church's entire sermon archive searchable via natural language — auto-ingested from YouTube, secured with pastoral guardrails, and fully provisioned via Terraform.
+[![Pulpit CI](https://github.com/manynames3/pulpit/actions/workflows/ci.yml/badge.svg)](https://github.com/manynames3/pulpit/actions/workflows/ci.yml)
+
+> A production-grade RAG system that makes a church's sermon archive searchable via natural language — auto-ingested from YouTube, secured with pastoral guardrails, fully provisioned via Terraform. **Running cost: ~$1–2/month.**
 
 ---
 
@@ -11,108 +13,81 @@ Church staff and members ask plain English questions against the full sermon arc
 
 ```
 "Has Pastor preached on grief and loss?"
-"What scriptures have been taught on anxiety in the last 2 years?"
+"What scriptures have been taught on anxiety this year?"
 "Summarize the series on the book of Romans."
-"What did Pastor say about forgiveness in 2023?"
+"What did Pastor say about forgiveness last month?"
 ```
 
-The system retrieves relevant sermon segments and returns a cited answer — sermon title, date, and scripture reference — grounded only in what was actually taught. New sermons are ingested automatically every week from the church's YouTube channel. Nobody uploads anything manually.
+The system finds relevant sermon segments and returns a cited answer — sermon title, date, scripture reference — grounded only in what was actually taught. New sermons are indexed automatically every week. Nobody uploads anything manually, ever.
+
+> **Built for Atlanta Bethel Church (아틀란타 벧엘교회), a Korean-English bilingual congregation in Gwinnett County, GA. Deployable by any church with a YouTube channel.**
 
 ---
 
-## Why This Exists
+## Why Not Just Upload to ChatGPT?
 
-Every church with years of recorded sermons has the same problem: the content is locked inside videos nobody has time to rewatch. Staff repeat research. Counselors can't quickly find what's been taught on a topic. New members have no way to explore the archive. This system solves that with infrastructure that costs less than a streaming subscription per month.
-
-> **Built originally for a Korean-English bilingual church community in Gwinnett County, GA. Designed to be deployable by any church with a YouTube channel.**
-
----
-
-## Why Not Just Use ChatGPT?
-
-This question comes up immediately. Here is the honest answer:
-
-| Limitation | ChatGPT Upload | Shepherd |
+| Limitation | ChatGPT Upload | Pulpit |
 |---|---|---|
-| Archive size | ~50 docs max per session | Unlimited — entire archive always indexed |
-| Persistence | Re-upload every session | Always available, zero manual work |
-| Auto-ingestion | Manual upload required | New sermons indexed automatically weekly |
-| Multi-user | Single user per session | Entire congregation simultaneously |
-| Access tiers | None | Members vs. staff permissions via Cognito |
+| Archive size | ~50 docs max per session | Entire archive always indexed |
+| Persistence | Re-upload every session | Always available |
+| Auto-ingestion | Manual every time | New sermons indexed weekly automatically |
+| Multi-user | One person per session | Entire congregation simultaneously |
+| Access tiers | None | Member vs. staff permissions |
 | Data privacy | Content sent to OpenAI servers | Stays entirely within your AWS account |
-| Audit trail | None | Every query logged — accountability built in |
-| Guardrails | Prompt-only, bypassable | Enforced at API level via Bedrock Guardrails |
-| Cost at scale | $20/month per user | ~$5–10/month flat for entire congregation |
-
-For a single document and a single user, ChatGPT is fine. For a living, multi-user archive that grows every week and must never expose sensitive pastoral content — you need infrastructure.
+| Audit trail | None | Every query logged for pastoral accountability |
+| Guardrails | Prompt-only, bypassable | Enforced at API level — cannot be bypassed |
+| Cost at scale | $20+/month per user | ~$1–2/month flat for entire congregation |
 
 ---
 
 ## Architecture
 
-### Design Philosophy
+### Core Design Principle
 
-> Every service in this architecture must answer yes to: *"Does the system break without this?"* If no — it is cut or made optional.
-
-This is a deliberately lean system. No OpenSearch cluster, no CloudFront, no X-Ray, no custom KMS keys, no SNS topics. Each of those was evaluated and cut. The reasoning is documented below in the [Architecture Decisions](#architecture-decisions) section.
+> Every service must answer yes to: *"Does the system break without this?"* If no — it gets cut or made optional.
 
 ### System Diagram
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                 INGESTION PIPELINE                       │
-│                      (weekly)                           │
-│                                                         │
-│  EventBridge (cron: every Monday 6am)                   │
-│       ↓                                                 │
-│  Lambda: ingest                                         │
-│    - YouTube Data API v3 → fetch new videos             │
-│    - youtube-transcript-api → pull free captions        │
-│    - Format JSON: title, date, scripture, series        │
-│    - Write to S3: transcripts/{year}/{sermon-id}.json   │
-│       ↓                                                 │
-│  S3 Bucket (transcripts)                                │
-│       ↓                                                 │
-│  Bedrock Knowledge Base (StartIngestionJob trigger)     │
-└─────────────────────────────────────────────────────────┘
+INGESTION (weekly)
+──────────────────
+EventBridge cron
+  → Lambda: ingest
+      - YouTube Data API v3 (fetch new video IDs)
+      - Filter: 2026+ only (cost control)
+      - youtube-transcript-api (free captions, no key needed)
+      - Extract scripture references from description
+      - Write JSON to S3
+  → Bedrock KB sync
+      - Chunk into ~300 token paragraphs (20% overlap)
+      - Embed via Titan Embeddings
+      - Store in managed vector store
 
-┌─────────────────────────────────────────────────────────┐
-│                  QUERY PIPELINE                          │
-│                   (per request)                         │
-│                                                         │
-│  User (browser / mobile)                                │
-│       ↓                                                 │
-│  API Gateway (HTTPS)                                    │
-│       ↓                                                 │
-│  Cognito Authorizer (member or staff JWT)               │
-│       ↓                                                 │
-│  Lambda: query                                          │
-│       ↓                                                 │
-│  Bedrock Guardrails                                     │
-│    - Block: self-harm, crisis, manipulation attempts    │
-│    - Block: political opinions, personal staff info     │
-│    - Redirect: pastoral care disclosures → contact info │
-│    - Ground: responses must cite sermon content only    │
-│       ↓                                                 │
-│  Bedrock Knowledge Base (semantic retrieval)            │
-│       ↓                                                 │
-│  Bedrock LLM (synthesize cited answer)                  │
-│       ↓                                                 │
-│  DynamoDB (log: user tier, query, response, timestamp)  │
-│       ↓                                                 │
-│  Response → user                                        │
-└─────────────────────────────────────────────────────────┘
+QUERY (per request)
+───────────────────
+API Gateway (HTTPS)
+  → Cognito (member or staff JWT)
+  → Lambda: query
+      - Crisis keyword check (pre-Bedrock redirect)
+      → Bedrock Guardrails (API-level enforcement)
+          - Block: political opinions, staff info, prompt injection
+          - Redirect: pastoral care disclosures → pastor contact
+          - Ground: responses must cite actual sermon content
+      → Bedrock Knowledge Base
+          - Convert question to vector
+          - Find 3-5 most relevant sermon chunks
+      → Bedrock Nova Lite
+          - Synthesize cited answer
+      → DynamoDB (audit log)
+  → Response to user
 
-┌─────────────────────────────────────────────────────────┐
-│                    SECURITY LAYER                        │
-│              (always on, mostly free)                   │
-│                                                         │
-│  CloudTrail → S3  (immutable API audit log)             │
-│  IAM least-privilege  (one role per Lambda, no *)       │
-│  Cognito  (auth, 2 tiers, 50k MAU free forever)         │
-│  S3 block public access  (enforced via Terraform)       │
-│  GuardDuty  (off by default — see options below)        │
-└─────────────────────────────────────────────────────────┘
+SECURITY (always on)
+────────────────────
+CloudTrail → S3    immutable audit log, free
+IAM roles          one scoped role per Lambda, no wildcards
+Cognito            2 tiers, 50k MAU free forever
+SSM SecureString   secrets never in code or git
+GuardDuty          off by default, enable_guardduty = true for prod
 ```
 
 ---
@@ -120,340 +95,289 @@ This is a deliberately lean system. No OpenSearch cluster, no CloudFront, no X-R
 ## Terraform Structure
 
 ```
-shepherd/
-├── main.tf                  # root: calls all modules
-├── variables.tf             # all toggles and config here
-├── outputs.tf               # API endpoint, Cognito pool ID, etc.
+pulpit/
+├── main.tf                    # 4 module calls, clean root
+├── variables.tf               # all config and feature toggles
+├── versions.tf                # provider constraints
+├── outputs.tf
 │
 ├── modules/
 │   ├── ingestion/
-│   │   ├── eventbridge.tf   # weekly cron rule
-│   │   ├── lambda.tf        # ingest Lambda + IAM role
-│   │   └── s3.tf            # transcript storage bucket
+│   │   ├── eventbridge.tf     # weekly cron
+│   │   ├── lambda.tf          # ingest Lambda + scoped IAM role
+│   │   ├── s3.tf              # transcript bucket
+│   │   └── ssm.tf             # YouTube API key (SecureString)
 │   │
 │   ├── knowledge-base/
-│   │   └── bedrock-kb.tf    # KB resource + S3 data source sync
+│   │   └── bedrock-kb.tf      # KB + managed vector store + chunking config
 │   │
 │   ├── query/
-│   │   ├── api-gateway.tf   # REST API + Cognito authorizer
-│   │   ├── cognito.tf       # user pool, member + staff groups
-│   │   ├── lambda.tf        # query Lambda + IAM role
-│   │   ├── guardrails.tf    # Bedrock Guardrails config
-│   │   └── dynamodb.tf      # query audit log table
+│   │   ├── api-gateway.tf
+│   │   ├── cognito.tf         # user pool, member + staff groups
+│   │   ├── lambda.tf          # query Lambda + scoped IAM role
+│   │   ├── guardrails.tf      # Bedrock Guardrails
+│   │   └── dynamodb.tf        # query audit log
 │   │
 │   └── security/
-│       ├── cloudtrail.tf    # trail + S3 log bucket
-│       ├── iam.tf           # account-level baseline policies
-│       └── guardduty.tf     # detector, toggled by variable
+│       ├── cloudtrail.tf
+│       ├── iam.tf
+│       └── guardduty.tf       # toggleable
 │
-└── environments/
-    ├── dev/
-    │   └── terraform.tfvars
-    └── prod/
-        └── terraform.tfvars
+├── lambda/
+│   ├── ingest/handler.py      # YouTube → transcript → S3
+│   └── query/handler.py       # guardrails → KB → cited answer
+│
+├── environments/
+│   ├── dev/terraform.tfvars
+│   └── prod/terraform.tfvars
+│
+└── scripts/
+    ├── set-api-key.sh         # store key in SSM after deploy
+    └── create-ci-user.sh      # least-privilege IAM for CI
 ```
 
 ---
 
-## Configuration & Feature Toggles
+## Cost Decisions Made During Build
 
-All meaningful decisions are exposed as variables. Nothing is hardcoded.
+This documents every cost decision made during development — including decisions that were reversed after discovering the real numbers. This is the actual engineering thought process, not a polished retrospective.
+
+---
+
+### Decision 1 — YouTube Transcripts vs AWS Transcribe
+
+**Initial plan:** Use AWS Transcribe to convert sermon audio to text.
+
+**Discovery:** YouTube already generates free captions for virtually every uploaded video. The `youtube-transcript-api` Python library pulls them directly — no API key, no cost, no quota.
+
+**AWS Transcribe cost:** $0.02/min × 45 min × 52 sermons/year = **$47/year** for something YouTube does for free.
+
+**Result: AWS Transcribe removed. Saves $47/year.**
+
+---
+
+### Decision 2 — OpenSearch Serverless vs Bedrock Managed Vector Store
+
+**Initial plan:** Use OpenSearch Serverless as the vector store — the AWS-recommended default for Bedrock KB.
+
+**Discovery:** OpenSearch Serverless has a **minimum charge of ~$175/month** regardless of usage. "Serverless" means no cluster management, not pay-per-use. AWS keeps minimum capacity units running whether you have zero queries or a million.
+
+The entire rest of this system costs ~$2/month. A $175/month vector store for a congregation with 50 queries/month is indefensible.
+
+**Bedrock Managed Vector Store:** AWS manages the vector store internally at zero idle cost. Pay only for embedding at ingest (~$0.10/sermon, one-time) and query costs (fractions of a cent).
+
+**Result: OpenSearch Serverless removed. Saves $175/month. Upgrade path documented for >50k queries/month.**
+
+---
+
+### Decision 3 — Claude Sonnet vs Amazon Nova Lite
+
+**Initial plan:** Claude Sonnet as the default LLM — highest quality.
+
+**Reality check:** The LLM's job in a RAG system is to read retrieved chunks and summarize them clearly. The Knowledge Base does the hard work of finding relevant content. Synthesizing a sermon summary is not a complex reasoning task.
+
+**Cost per 1,000 queries:**
+
+| Model | Cost |
+|---|---|
+| Claude Sonnet | ~$40 |
+| Claude Haiku | ~$8 |
+| Amazon Nova Lite | ~$2 |
+
+Nova Lite is AWS's newest lightweight model, designed specifically for retrieval tasks. Quality is sufficient for sermon Q&A. Model is a single variable — upgradeable in 30 seconds.
+
+**Result: Nova Lite as default. Saves ~$38/1,000 queries vs Sonnet. Fully swappable.**
+
+---
+
+### Decision 4 — Full Archive vs 2026-Only Ingestion
+
+**Initial plan:** Ingest the complete sermon archive on first run.
+
+**Discovery:** Atlanta Bethel has been uploading sermons for years. Full archive = ~500 sermons × $0.10 = **$50 one-time embedding cost**.
+
+**2026 filter:** Lambda checks `publishedAt[:4]` (year from YouTube's ISO 8601 timestamp). Anything before 2026 is skipped before any processing. ~16 sermons uploaded since January 2026.
+
+**2026-only cost: ~$1.60 total.**
+
+**Result: Default to 2026-only pilot. Full archive available by removing one filter line. Let the church decide if $50 is worth the complete history.**
+
+---
+
+### Decision 5 — GuardDuty Default State
+
+**Initial plan:** Enable GuardDuty by default as part of the SOC 2-aligned security baseline.
+
+**Reality check:** This is a fully serverless architecture — no EC2, no persistent servers. GuardDuty's primary value (detecting compromised instances, unusual EC2 behavior, crypto mining) doesn't apply here. The real credential risk is already mitigated by scoped IAM roles, SSM secrets, and CloudTrail.
+
+**Result: GuardDuty off by default. One variable flip (`enable_guardduty = true`) to enable in prod. The Terraform resource exists — cost is zero until deliberately enabled.**
+
+---
+
+### Decision 6 — API Key in tfvars vs SSM Parameter Store
+
+**Initial plan:** Pass YouTube API key as a Terraform variable in tfvars.
+
+**Problem:** Terraform variables end up in state files. tfvars files get accidentally committed. CI logs can expose them. An API key in a tfvars file is one mistake away from being public.
+
+**Result: YouTube API key stored in SSM Parameter Store as SecureString. Lambda fetches at runtime via SDK. Never in code, never in git, never in CI logs. IAM role scoped to that specific SSM path only.**
+
+---
+
+### Services Evaluated and Removed
+
+| Service | Reason |
+|---|---|
+| AWS Transcribe | YouTube captions are free. Transcribe adds $47/year for zero benefit |
+| OpenSearch Serverless | $175/month minimum idle cost. Replaced by Bedrock managed vector store |
+| CloudFront | API Gateway serves HTTPS globally. Zero latency benefit at church scale |
+| X-Ray tracing | CloudWatch logs sufficient. X-Ray adds cost without proportional debug value |
+| Custom KMS keys | S3 AES256 default encryption is free and sufficient for pilot |
+| AWS Config Rules | EC2 drift detection. Irrelevant for serverless-only architecture |
+| SNS topics | CloudWatch alarms email directly. SNS is an unnecessary hop |
+| Dev environment wrapper module | Created `module.pulpit.module.ingestion` nesting. Removed — run from root with `-var-file` |
+
+---
+
+## Real Cost Numbers
+
+### One-time setup
+
+| Item | Cost |
+|---|---|
+| Embed 2026 sermons (~16) | ~$1.60 |
+| Everything else | $0 |
+| **Total** | **~$1.60** |
+
+### Monthly ongoing
+
+| Service | Cost |
+|---|---|
+| Lambda, EventBridge, Cognito, DynamoDB, CloudTrail | ~$0 |
+| S3 storage | ~$0.05 |
+| Bedrock KB sync (new weekly sermons) | ~$0.40 |
+| Bedrock Nova Lite queries | ~$0.50–1.00 |
+| GuardDuty (if enabled) | ~$1–2 |
+| **Total** | **~$1–2/month** |
+
+### Cost at scale
+
+| Query Volume | Nova Lite | Nova Pro | Claude Haiku |
+|---|---|---|---|
+| 500/month | ~$1 | ~$3 | ~$5 |
+| 2,000/month | ~$2 | ~$8 | ~$18 |
+| 10,000/month | ~$8 | ~$35 | ~$90 |
+
+### Full archive option
+
+| Scope | One-time embedding |
+|---|---|
+| 2026 only (~16 sermons) | ~$1.60 |
+| 2 years (~100 sermons) | ~$10 |
+| Full archive (~500 sermons) | ~$50 |
+
+---
+
+## Feature Toggles
 
 ```hcl
-# variables.tf
+# Swap LLM model without changing any code
+# amazon.nova-lite-v1:0              default — ~$0.06/1M tokens
+# amazon.nova-pro-v1:0               mid tier — ~$0.80/1M tokens
+# anthropic.claude-haiku-4-5-20251001      quality — ~$0.80/1M tokens
+# anthropic.claude-sonnet-4-6        best   — ~$3.00/1M tokens
+variable "bedrock_model_id" { default = "amazon.nova-lite-v1:0" }
 
-variable "bedrock_model_id" {
-  description = "LLM model for query synthesis. See model options below."
-  default     = "amazon.nova-lite-v1:0"
-}
+# Enable threat detection in production
+variable "enable_guardduty" { default = false }
 
-variable "enable_guardduty" {
-  description = "Enable AWS GuardDuty threat detection. Recommended for production."
-  default     = false
-}
-
-variable "youtube_channel_id" {
-  description = "The church YouTube channel ID to ingest from."
-}
-
-variable "ingest_schedule" {
-  description = "EventBridge cron for ingestion. Default: every Monday 6am UTC."
-  default     = "cron(0 6 ? * MON *)"
-}
-
-variable "environment" {
-  description = "dev or prod. Controls log retention, deletion protection, etc."
-  default     = "dev"
-}
+# Ingestion schedule — any EventBridge cron expression
+variable "ingest_schedule" { default = "cron(0 6 ? * MON *)" }
 ```
 
-### Dev vs. Prod differences
+### Dev vs Prod
 
 | Setting | Dev | Prod |
 |---|---|---|
 | DynamoDB deletion protection | Off | On |
-| CloudTrail log retention | 30 days | 365 days |
+| S3 force_destroy | On | Off |
 | GuardDuty | Off | Recommended on |
-| Bedrock model | Nova Lite | Configurable |
 | Cognito MFA | Optional | Required for staff |
-
----
-
-## LLM Model Options
-
-The model is a single variable swap. Here is the full tradeoff matrix:
-
-| Model | Bedrock Model ID | Input/1M tokens | Output/1M tokens | Quality | Recommended For |
-|---|---|---|---|---|---|
-| **Amazon Nova Lite** ✅ default | `amazon.nova-lite-v1:0` | $0.06 | $0.24 | Good | Starter / budget / pilot |
-| **Amazon Nova Pro** | `amazon.nova-pro-v1:0` | $0.80 | $3.20 | Very Good | Mid-budget production |
-| **Claude Haiku 3.5** | `anthropic.claude-haiku-4-5-20251001` | $0.80 | $4.00 | Excellent | Quality-first production |
-| **Claude Sonnet** | `anthropic.claude-sonnet-4-6` | $3.00 | $15.00 | Best | High-volume enterprise |
-| **Llama 3.1 8B** | `meta.llama3-1-8b-instruct-v1:0` | $0.22 | $0.22 | Moderate | Experimental / cost testing |
-
-### Why Nova Lite as default
-
-- Lowest cost for a non-profit / pilot deployment
-- Native AWS model — best-tested integration with Bedrock Knowledge Base
-- Designed specifically for retrieval-augmented tasks
-- Quality is sufficient for sermon Q&A: the KB does the heavy lifting, the LLM just synthesizes
-
-### When to upgrade
-
-Upgrade to **Claude Haiku** if:
-- Answers feel choppy or miss nuance in complex theological questions
-- Bilingual Korean/English content is being mishandled
-- The congregation is large and answer quality is a pastoral concern
-
-Upgrade to **Claude Sonnet** only if this becomes a high-traffic multi-church platform.
-
----
-
-## Guardrails Configuration
-
-Bedrock Guardrails enforces content policy at the API level — not the prompt level. This is important: prompt-only guardrails can be bypassed with prompt injection. API-level enforcement cannot.
-
-### What is blocked
-
-```
-HARD BLOCKS (returns safe error message):
-- Self-harm, suicide, crisis language
-- Requests for personal information about staff or members
-- Political opinion fishing ("what does Pastor think about...")
-- Attempts to override system behavior ("ignore previous instructions")
-- Content unrelated to the sermon archive scope
-
-REDIRECTS (returns pastoral contact instead of an answer):
-- Mental health disclosures
-- Marriage or family crisis language
-- Abuse disclosures of any kind
-→ Response: "This sounds important. Please speak directly with a pastor.
-   You can reach the pastoral team at [contact]. This conversation is private."
-
-GROUNDING ENFORCEMENT:
-- Responses must be sourced from the Knowledge Base
-- Model cannot generate theological positions not present in sermons
-- Every answer must cite: sermon title, date, scripture reference
-- If topic not found: "This topic hasn't been addressed in our sermon archive.
-   Consider speaking with a pastor directly."
-```
-
-### Why this matters for a church specifically
-
-A general-purpose AI assistant in a church context is a liability without guardrails. Members may be vulnerable. Questions may be pastoral in nature. The system must never:
-- Give spiritual advice beyond what was actually preached
-- Engage with theological manipulation attempts
-- Miss a crisis disclosure by treating it as a search query
-
-Bedrock Guardrails handles all of this at the infrastructure layer — before the LLM ever sees the query.
-
----
-
-## Access Tiers
-
-Two Cognito user groups with different document access:
-
-| Content | Member | Staff / Elder |
-|---|---|---|
-| All sermon transcripts | ✅ | ✅ |
-| Scripture reference index | ✅ | ✅ |
-| Series summaries | ✅ | ✅ |
-| Elder board meeting minutes | ❌ | ✅ |
-| Pastoral care policies | ❌ | ✅ |
-| Benevolence fund guidelines | ❌ | ✅ |
-| Query audit logs | ❌ | ✅ |
-
-Lambda reads the Cognito group claim from the JWT and filters KB retrieval scope accordingly.
-
----
-
-## Auto-Ingestion Pipeline
-
-### Why YouTube transcripts instead of AWS Transcribe
-
-AWS Transcribe costs ~$0.02/minute of audio. A 45-minute sermon = $0.90. At 52 sermons/year = ~$47/year in transcription alone. YouTube already generates free captions for almost all uploaded videos — typically within hours of upload.
-
-The `youtube-transcript-api` Python library pulls these directly. No cost. No quota impact beyond the YouTube Data API free tier (10,000 units/day — a weekly Lambda run uses ~10 units).
-
-### Transcript metadata schema
-
-Each sermon is stored in S3 as structured JSON:
-
-```json
-{
-  "sermon_id": "abc123",
-  "title": "When God Feels Silent",
-  "date": "2024-03-17",
-  "series": "Psalms of Lament",
-  "scripture_references": ["Psalm 22:1-2", "Matthew 27:46"],
-  "pastor": "Pastor Kim",
-  "language": "en",
-  "duration_minutes": 47,
-  "youtube_url": "https://youtube.com/watch?v=abc123",
-  "transcript": "Full transcript text here..."
-}
-```
-
-Scripture references are extracted from the video description via regex — churches almost always include them. This metadata powers citation in responses.
-
----
-
-## Cost Analysis
-
-### Monthly estimate (active congregation, ~500 queries/month)
-
-| Service | Free Tier | Est. Monthly Cost |
-|---|---|---|
-| Lambda (2 functions) | Always free | ~$0.00 |
-| EventBridge | Always free | ~$0.00 |
-| S3 (transcript storage) | 5GB free | ~$0.05 |
-| Bedrock KB sync | Per-sync pricing | ~$0.50 |
-| Bedrock Nova Lite queries | No free tier | ~$0.50–1.00 |
-| API Gateway | 1M calls free yr 1 | ~$0.00–1.00 |
-| Cognito | 50k MAU free | ~$0.00 |
-| DynamoDB | Always free at this scale | ~$0.00 |
-| CloudTrail | 1 trail free | ~$0.00 |
-| GuardDuty (if enabled) | 30-day trial | ~$1.00–2.00 |
-| **Total** | | **~$1–5/month** |
-
-### Scaling cost
-
-| Query Volume | Nova Lite | Claude Haiku | Claude Sonnet |
-|---|---|---|---|
-| 500/month | ~$1 | ~$5 | ~$20 |
-| 2,000/month | ~$3 | ~$18 | ~$75 |
-| 10,000/month | ~$15 | ~$90 | ~$375 |
-
-At any volume, Nova Lite is the responsible default for a non-profit. The model ID is one variable change when budget allows an upgrade.
+| Bedrock model | Nova Lite | Nova Pro or Haiku |
 
 ---
 
 ## Production Upgrade Path
 
-This system is intentionally built lean for a pilot/non-profit deployment. Here is the documented upgrade path when moving to a funded or multi-church production deployment:
+### Security
+- `enable_guardduty = true` — adds ~$1–4/month, continuous threat detection
+- KMS CMK — replace AES256 with customer-managed key for full rotation audit
+- WAF on API Gateway — rate limiting and geo-blocking for public deployment
 
-### Security upgrades
-- **Enable GuardDuty** — set `enable_guardduty = true`. Adds ~$1–4/month. Provides continuous threat detection.
-- **Custom KMS keys** — replace S3 default encryption with KMS CMK for full key control and rotation audit trail.
-- **AWS Config Rules** — add drift detection if the deployment grows to include EC2 or more complex resources.
-- **WAF on API Gateway** — add rate limiting and geo-blocking if the API is public-facing at scale.
+### Quality
+- Upgrade to Claude Haiku — one variable change, better theological nuance
+- Add Bedrock reranking — improves retrieval precision, ~$0.002/query
+- Korean ingestion — separate S3 prefix, language tag, bilingual KB
 
-### Quality upgrades
-- **Upgrade model to Claude Haiku** — single variable change. Noticeably better synthesis quality for complex theological questions.
-- **Add reranking** — Bedrock KB supports reranking models that improve retrieval precision. Adds cost but improves answer quality significantly at scale.
-- **Bilingual support** — Korean sermon ingestion via separate S3 prefix + language-aware KB configuration.
-
-### Scale upgrades
-- **Multi-church deployment** — parameterize `youtube_channel_id` and `cognito_user_pool` per church. Each church gets isolated data and auth. One Terraform workspace per church.
-- **CloudFront** — add CDN in front of API Gateway if latency becomes a concern for geographically distributed users.
-- **Dedicated OpenSearch** — replace Bedrock's managed vector store with a dedicated OpenSearch Serverless collection if query volume exceeds ~50,000/month.
+### Scale
+- Multi-church — parameterize channel ID and Cognito pool per church
+- S3 Terraform backend — required for team collaboration
+- OpenSearch Serverless — only justified above ~50,000 queries/month
 
 ---
 
-## What Was Cut and Why
+## Security Design
 
-| Service | Reason Removed |
-|---|---|
-| AWS Transcribe | YouTube provides free captions. Transcribe costs ~$47/year unnecessarily |
-| OpenSearch Serverless | Bedrock KB manages its own vector store. OpenSearch adds ~$90/month base cost with no benefit at this scale |
-| CloudFront | API Gateway already serves HTTPS globally. CloudFront adds cost and complexity with no meaningful latency improvement for this use case |
-| X-Ray tracing | CloudWatch logs are sufficient for debugging at this scale. X-Ray adds cost and complexity without proportional observability value |
-| Custom KMS keys | S3 default encryption (SSE-S3) is free and sufficient for a non-profit pilot. KMS adds ~$1/month per key plus API call costs |
-| AWS Config Rules | Designed for EC2 and stateful resource drift detection. A serverless-only architecture has minimal drift risk |
-| SNS topics | CloudWatch alarms can email directly. SNS is an unnecessary hop for a single-destination alert |
-| Multiple Lambda layers | Two Lambdas (ingest + query) cover all functionality cleanly. Additional functions would add complexity without separation of concern benefit |
+**IAM Least Privilege:** Each Lambda has its own scoped role. Ingest Lambda: S3 write to `/transcripts/*` only + SSM read on one specific parameter path. Query Lambda: Bedrock retrieve + DynamoDB write only. No wildcards anywhere.
+
+**Secrets:** YouTube API key in SSM SecureString. Never in tfvars, never in environment variables at rest, never in git, never in CI logs.
+
+**Guardrails:** Bedrock Guardrails enforces content policy at the API layer, not the prompt layer. Prompt injection cannot bypass it. Crisis disclosures redirect to pastor contact before the LLM processes anything.
+
+**Audit:** Every query logged to DynamoDB with user ID, group, question, response, citations, timestamp. 90-day TTL in dev, 365-day in prod. Staff-accessible for pastoral accountability.
 
 ---
 
-## Architecture Decisions
-
-### Why Bedrock over self-hosted LLM
-
-Self-hosting an open-source LLM (Llama, Mistral) on EC2 would cost ~$50–200/month minimum for a GPU instance — more than this entire system costs to run. Bedrock is pay-per-token with no infrastructure to manage. For a non-profit deployment, this is the only responsible choice.
-
-### Why not LangChain or LlamaIndex
-
-These frameworks abstract the RAG pipeline but add dependency complexity and version fragility. Bedrock's native Knowledge Base handles chunking, embedding, and retrieval without a framework layer. Fewer dependencies = fewer breaking changes = lower maintenance burden for a church that has no dedicated DevOps staff.
-
-### Why Cognito over a simpler auth approach
-
-API keys would be simpler but not auditable per-user. Cognito provides per-user identity, group-based access tiers, JWT tokens compatible with API Gateway, and a free tier that covers any realistic church size. The audit log in DynamoDB ties every query to a Cognito user ID — this matters for pastoral accountability.
-
-### Why DynamoDB over CloudWatch Logs for query history
-
-CloudWatch Logs are optimized for operational debugging, not queryable history. DynamoDB lets staff retrieve *"all questions asked about topic X in the last 6 months"* or *"all queries by a specific user."* That's a pastoral accountability feature, not just observability.
-
-### Why EventBridge over a manual trigger
-
-The system should require zero human involvement after deployment. A cron trigger means a sermon uploaded Sunday is indexed by Monday morning automatically. Manual triggers create a recurring human dependency that will eventually fail.
-
----
-
-## Local Development
+## Deployment
 
 ```bash
-# Prerequisites
-# - AWS CLI configured
-# - Terraform >= 1.5
-# - Python 3.11+
-# - YouTube Data API v3 key
+git clone https://github.com/manynames3/pulpit.git
+cd pulpit
 
-# Clone and initialize
-git clone https://github.com/yourhandle/shepherd
-cd shepherd
+# Store YouTube API key in SSM (run once after terraform apply)
+./scripts/set-api-key.sh dev YOUR_API_KEY
+
 terraform init
-
-# Deploy dev environment
-cd environments/dev
-terraform plan
-terraform apply
-
-# Test ingestion manually
-aws lambda invoke \
-  --function-name shepherd-ingest-dev \
-  --payload '{"manual": true}' \
-  response.json
-
-# Test query
-curl -X POST https://{api-id}.execute-api.us-east-1.amazonaws.com/dev/query \
-  -H "Authorization: Bearer {cognito-jwt}" \
-  -H "Content-Type: application/json" \
-  -d '{"question": "Has Pastor preached on forgiveness?"}'
+terraform plan  -var-file=environments/dev/terraform.tfvars
+terraform apply -var-file=environments/dev/terraform.tfvars
 ```
+
+---
+
+## CI/CD
+
+Every push runs:
+
+| Step | Tool | Purpose |
+|---|---|---|
+| Format check | `terraform fmt` | Style enforcement |
+| Validate | `terraform validate` | Syntax + provider schema |
+| Security scan | Checkov | IaC misconfiguration warnings |
+| Plan | `terraform plan` | Preview against real AWS account |
+
+Deploy is always manual. CI never auto-applies. Plan output posted as PR comment automatically.
 
 ---
 
 ## Skills Demonstrated
 
-This project was built as a portfolio demonstration of the following:
-
-- **Terraform IaC** — modular, multi-environment, variable-driven infrastructure
-- **AWS Serverless** — Lambda, API Gateway, EventBridge, DynamoDB, S3
-- **AWS Bedrock** — Knowledge Base, Guardrails, LLM integration
-- **Security baseline** — IAM least-privilege, CloudTrail, Cognito auth tiers
-- **Cost engineering** — deliberate service selection based on TCO, not defaults
-- **Architectural reasoning** — every decision documented with tradeoffs
-- **Real-world use case** — built for an actual community need, not a toy demo
+- **Terraform IaC** — modular, multi-environment, variable-driven
+- **AWS Serverless** — Lambda, API Gateway, EventBridge, DynamoDB, S3, SSM
+- **AWS Bedrock** — Knowledge Base, Guardrails, managed vector store, model selection
+- **Cost engineering** — real decisions, real numbers, reversals documented
+- **Security** — IAM least-privilege, CloudTrail, Cognito tiers, secrets management
+- **CI/CD** — GitHub Actions with fmt, validate, Checkov, plan
+- **Architectural reasoning** — every decision documented including what was cut and why
 
 ---
 
@@ -463,37 +387,10 @@ This project was built as a portfolio demonstration of the following:
 
 Clearpath Property Group · Visual Impact Studios · Suwanee, GA
 
-*Built for the Korean-English worship community in Gwinnett County.*
+*Built for Atlanta Bethel Church (아틀란타 벧엘교회), Gwinnett County, GA.*
 
 ---
 
 ## License
 
 MIT — deploy it, fork it, adapt it for your church.
-
----
-
-## CI/CD Pipeline
-
-[![Pulpit CI](https://github.com/manynames3/pulpit/actions/workflows/ci.yml/badge.svg)](https://github.com/manynames3/pulpit/actions/workflows/ci.yml)
-
-Every push and pull request runs:
-
-| Step | Tool | Purpose |
-|---|---|---|
-| Format check | `terraform fmt` | Consistent code style |
-| Syntax validate | `terraform validate` | Catch errors before deploy |
-| Security scan | Checkov | Flag IaC misconfigurations (SOC 2 alignment) |
-| Lint | TFLint | AWS-specific best practices |
-| Plan | `terraform plan` | Preview changes, posted as PR comment |
-
-Deploy is always a **manual step** — CI never auto-applies.
-
-### GitHub Secrets required for plan job
-
-```
-AWS_ACCESS_KEY_ID      — IAM user with limited deploy permissions
-AWS_SECRET_ACCESS_KEY  — corresponding secret
-```
-
-To add secrets: GitHub repo → Settings → Secrets and variables → Actions → New repository secret
