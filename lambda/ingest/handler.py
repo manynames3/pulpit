@@ -1,27 +1,17 @@
 """
 Pulpit — Ingestion Lambda
-Runs weekly via EventBridge. Fetches new sermon transcripts from YouTube
-and stores them in S3 for Bedrock Knowledge Base ingestion.
 
-Why YouTube transcripts instead of AWS Transcribe:
-- YouTube auto-generates free captions for virtually all uploaded videos
-- AWS Transcribe costs ~$0.02/min = ~$0.90 per 45-min sermon = ~$47/year
-- youtube-transcript-api pulls captions with zero cost and zero quota impact
-
-Why SSM for the API key:
-- Secrets must never be hardcoded or committed to git
-- SSM SecureString encrypts at rest with KMS
-- Lambda IAM role grants access to this specific parameter only
-- Rotating the key requires zero code changes — update SSM value only
+Fetches 2026+ sermon transcripts from Atlanta Bethel Church YouTube channel.
+Uses YouTube Data API v3 directly via requests (no Google client library needed).
+youtube-transcript-api pulls free captions — no compiled dependencies.
 """
 
 import json
 import os
 import re
 import boto3
+import requests
 from datetime import datetime, timezone
-from googleapiclient.discovery import build
-from youtube_transcript_api import YouTubeTranscriptApi
 
 s3  = boto3.client("s3")
 ssm = boto3.client("ssm")
@@ -32,15 +22,14 @@ SSM_KEY    = os.environ["SSM_PARAMETER_NAME"]
 
 
 def get_youtube_api_key():
-    """Fetch API key from SSM at runtime — never stored in env vars or code."""
+    """Fetch API key from SSM at runtime — never stored in code or env vars."""
     response = ssm.get_parameter(Name=SSM_KEY, WithDecryption=True)
     return response["Parameter"]["Value"]
 
 
 def lambda_handler(event, context):
-    youtube_api_key = get_youtube_api_key()
-    youtube = build("youtube", "v3", developerKey=youtube_api_key)
-    new_videos = get_new_videos(youtube)
+    api_key    = get_youtube_api_key()
+    new_videos = get_new_videos(api_key)
 
     ingested = []
     skipped  = []
@@ -48,12 +37,9 @@ def lambda_handler(event, context):
     for video in new_videos:
         video_id = video["id"]
 
-        # Only ingest 2026 and later sermons.
-        # Keeps embedding costs minimal during pilot (~$0.10/sermon).
-        # To include full archive, remove this check and re-run.
+        # Only ingest 2026+ sermons — cost control for pilot
         published_year = int(video["published_at"][:4])
         if published_year < 2026:
-            print(f"Skipping pre-2026 video: {video_id} ({video['published_at'][:10]})")
             skipped.append(video_id)
             continue
 
@@ -69,20 +55,31 @@ def lambda_handler(event, context):
         sermon = build_sermon_record(video, transcript)
         store_transcript(sermon)
         ingested.append(video_id)
+        print(f"Ingested: {sermon['title']} ({sermon['date']})")
 
-    print(f"Ingested: {len(ingested)} | Skipped: {len(skipped)}")
+    print(f"Done — ingested: {len(ingested)}, skipped: {len(skipped)}")
     return {"ingested": ingested, "skipped": skipped}
 
 
-def get_new_videos(youtube, max_results=10):
-    """Fetch recent videos from the church channel."""
-    response = youtube.search().list(
-        part="snippet",
-        channelId=CHANNEL_ID,
-        order="date",
-        type="video",
-        maxResults=max_results
-    ).execute()
+def get_new_videos(api_key, max_results=20):
+    """
+    Fetch recent videos from the channel using YouTube Data API v3 directly.
+    Using requests instead of google-api-python-client avoids compiled
+    C extension dependencies that break on Lambda's Linux runtime.
+    """
+    url = "https://www.googleapis.com/youtube/v3/search"
+    params = {
+        "part":       "snippet",
+        "channelId":  CHANNEL_ID,
+        "order":      "date",
+        "type":       "video",
+        "maxResults": max_results,
+        "key":        api_key
+    }
+
+    resp = requests.get(url, params=params, timeout=10)
+    resp.raise_for_status()
+    data = resp.json()
 
     return [
         {
@@ -91,17 +88,19 @@ def get_new_videos(youtube, max_results=10):
             "description":  item["snippet"]["description"],
             "published_at": item["snippet"]["publishedAt"],
         }
-        for item in response.get("items", [])
+        for item in data.get("items", [])
+        if item.get("id", {}).get("videoId")
     ]
 
 
 def fetch_transcript(video_id):
     """
-    Pull free YouTube captions — no API key needed for this step.
-    Prefers English, falls back to Korean for bilingual church content.
-    Returns None if no captions available.
+    Pull free YouTube captions — no API key needed.
+    youtube-transcript-api is pure Python — no compiled extensions.
+    Prefers English, falls back to Korean for bilingual content.
     """
     try:
+        from youtube_transcript_api import YouTubeTranscriptApi
         transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
         try:
             transcript = transcript_list.find_transcript(["en"])
@@ -116,10 +115,6 @@ def fetch_transcript(video_id):
 
 
 def extract_scripture_references(text):
-    """
-    Extract Bible book references from video title and description.
-    Churches almost always include scripture references in descriptions.
-    """
     pattern = (
         r'\b(?:Genesis|Exodus|Leviticus|Numbers|Deuteronomy|Joshua|Judges|Ruth|'
         r'(?:1|2)\s*Samuel|(?:1|2)\s*Kings|(?:1|2)\s*Chronicles|Ezra|Nehemiah|'
@@ -137,17 +132,16 @@ def extract_scripture_references(text):
 def build_sermon_record(video, transcript):
     description = video.get("description", "")
     return {
-        "sermon_id":           video["id"],
-        "title":               video["title"],
-        "date":                video["published_at"][:10],
-        "youtube_url":         f"https://youtube.com/watch?v={video['id']}",
+        "sermon_id":            video["id"],
+        "title":                video["title"],
+        "date":                 video["published_at"][:10],
+        "youtube_url":          f"https://youtube.com/watch?v={video['id']}",
         "scripture_references": extract_scripture_references(
             video["title"] + " " + description
         ),
-        "description":         description[:500],
-        "language":            "en",
-        "transcript":          transcript,
-        "ingested_at":         datetime.now(timezone.utc).isoformat()
+        "description":          description[:500],
+        "transcript":           transcript,
+        "ingested_at":          datetime.now(timezone.utc).isoformat()
     }
 
 
@@ -167,4 +161,3 @@ def store_transcript(sermon):
         Body=json.dumps(sermon, ensure_ascii=False),
         ContentType="application/json"
     )
-    print(f"Stored: {key}")
