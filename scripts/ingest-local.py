@@ -39,30 +39,63 @@ print("─" * 60)
 
 
 def get_videos():
-    resp = requests.get(
-        "https://www.googleapis.com/youtube/v3/search",
-        params={
+    """
+    Fetch all 2026+ completed live streams using pagination.
+    YouTube search API returns max 50 per page — paginate until
+    we hit a pre-2026 video or run out of results.
+    Each page costs 100 quota units (daily limit: 10,000).
+    """
+    videos    = []
+    page_token = None
+
+    while True:
+        params = {
             "part":       "snippet",
             "channelId":  CHANNEL_ID,
             "order":      "date",
             "type":       "video",
             "eventType":  "completed",
-            "maxResults": MAX_RESULTS,
+            "maxResults": 50,
             "key":        API_KEY
-        },
-        timeout=10
-    )
-    resp.raise_for_status()
-    return [
-        {
-            "id":           item["id"]["videoId"],
-            "title":        item["snippet"]["title"],
-            "description":  item["snippet"]["description"],
-            "published_at": item["snippet"]["publishedAt"],
         }
-        for item in resp.json().get("items", [])
-        if item.get("id", {}).get("videoId")
-    ]
+        if page_token:
+            params["pageToken"] = page_token
+
+        resp = requests.get(
+            "https://www.googleapis.com/youtube/v3/search",
+            params=params,
+            timeout=10
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+        items = data.get("items", [])
+        hit_old = False
+
+        for item in items:
+            vid_id = item.get("id", {}).get("videoId")
+            if not vid_id:
+                continue
+            date = item["snippet"]["publishedAt"][:10]
+            if int(date[:4]) < YEAR_FILTER:
+                hit_old = True
+                break
+            videos.append({
+                "id":           vid_id,
+                "title":        item["snippet"]["title"],
+                "description":  item["snippet"]["description"],
+                "published_at": item["snippet"]["publishedAt"],
+            })
+
+        # Stop if we hit a pre-2026 video or no more pages
+        next_page = data.get("nextPageToken")
+        if hit_old or not next_page:
+            break
+
+        page_token = next_page
+        print(f"  Fetching next page ({len(videos)} videos so far)...")
+
+    return videos
 
 
 def transcript_exists(video_id):
