@@ -168,23 +168,24 @@ def build_sermon_context(sermons):
 
 
 def invoke_bedrock(prompt):
-    """Call Bedrock with guardrails applied."""
-    body = json.dumps({
-        "anthropic_version": "bedrock-2023-05-31",
-        "max_tokens": 1000,
-        "system": SYSTEM_PROMPT,
-        "messages": [{"role": "user", "content": prompt}]
-    })
+    """Call Bedrock via Converse API with guardrails applied."""
+    system_text = SYSTEM_PROMPT.replace("{church}", "Atlanta Bethel Church")
 
-    resp = bedrock.invoke_model(
+    resp = bedrock.converse(
         modelId=MODEL_ID,
-        body=body,
-        guardrailIdentifier=GUARDRAIL_ID,
-        guardrailVersion=GUARDRAIL_VER
+        system=[{"text": system_text}],
+        messages=[
+            {"role": "user", "content": [{"text": prompt}]}
+        ],
+        inferenceConfig={"maxTokens": 1000},
+        guardrailConfig={
+            "guardrailIdentifier": GUARDRAIL_ID,
+            "guardrailVersion": GUARDRAIL_VER,
+            "trace": "disabled"
+        }
     )
 
-    result = json.loads(resp["body"].read())
-    return result["content"][0]["text"]
+    return resp["output"]["message"]["content"][0]["text"]
 
 
 def is_crisis_disclosure(text):

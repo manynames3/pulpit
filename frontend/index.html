@@ -92,7 +92,7 @@
       transition: opacity 0.05s;
     }
 
-    #login-screen, #query-screen { display: none; }
+    #login-screen, #signup-screen, #verify-screen, #query-screen { display: none; }
 
     /* Inputs */
     .input-row {
@@ -283,15 +283,51 @@
     </div>
     <div class="hint">[ PRESS ENTER TO AUTHENTICATE ]</div>
     <div id="login-error" class="error-text" style="margin-top:10px; font-size:12px;"></div>
-    <div class="auth-note">
-      NEW USER? CREATE ACCOUNT VIA AWS CLI:<br><br>
-      aws cognito-idp sign-up \<br>
-      &nbsp;&nbsp;--client-id 26eit6g1j6qmfk3jp0m8uat58i \<br>
-      &nbsp;&nbsp;--username you@email.com \<br>
-      &nbsp;&nbsp;--password YourPass1!<br><br>
-      aws cognito-idp admin-confirm-sign-up \<br>
-      &nbsp;&nbsp;--user-pool-id us-east-1_h9uVjOm3V \<br>
-      &nbsp;&nbsp;--username you@email.com
+    <div style="margin-top:20px;">
+      <span class="cmd-link" id="goto-signup-btn" style="font-size:13px; margin-left:0;">NEW USER? CREATE ACCOUNT</span>
+    </div>
+  </div>
+
+  <!-- SIGN UP -->
+  <div id="signup-screen">
+    <div style="color:var(--green-dim); font-size:12px; letter-spacing:2px; margin-bottom:18px;">CREATE ACCOUNT</div>
+    <div class="input-row">
+      <span class="prompt">EMAIL://</span>
+      <input class="terminal-input" id="signup-email" type="email" autocomplete="off" spellcheck="false">
+      <span class="cursor"></span>
+    </div>
+    <div class="input-row">
+      <span class="prompt">PASS://&nbsp;</span>
+      <input class="terminal-input" id="signup-pass" type="password" autocomplete="off"
+             placeholder="min 8 chars, 1 number, 1 uppercase">
+    </div>
+    <div class="input-row">
+      <span class="prompt">CONFIRM:</span>
+      <input class="terminal-input" id="signup-confirm" type="password" autocomplete="off">
+    </div>
+    <div class="hint">[ PRESS ENTER TO CREATE ACCOUNT ]</div>
+    <div id="signup-error" class="error-text" style="margin-top:10px; font-size:12px;"></div>
+    <div style="margin-top:20px;">
+      <span class="cmd-link" id="goto-login-btn" style="font-size:13px; margin-left:0;">← BACK TO LOGIN</span>
+    </div>
+  </div>
+
+  <!-- VERIFY EMAIL -->
+  <div id="verify-screen">
+    <div style="color:var(--green-dim); font-size:12px; letter-spacing:2px; margin-bottom:18px;">VERIFY EMAIL</div>
+    <div style="color:var(--green-dim); font-size:12px; margin-bottom:18px; line-height:1.8;">
+      A 6-digit verification code was sent to your email.<br>
+      Enter it below to activate your account.
+    </div>
+    <div class="input-row">
+      <span class="prompt">CODE://</span>
+      <input class="terminal-input" id="verify-code" type="text" autocomplete="off"
+             maxlength="6" spellcheck="false" placeholder="______">
+    </div>
+    <div class="hint">[ PRESS ENTER TO VERIFY ]</div>
+    <div id="verify-error" class="error-text" style="margin-top:10px; font-size:12px;"></div>
+    <div style="margin-top:14px;">
+      <span class="cmd-link" id="resend-btn" style="font-size:12px; margin-left:0;">RESEND CODE</span>
     </div>
   </div>
 
@@ -334,6 +370,8 @@
 
   let idToken = sessionStorage.getItem('pulpit_token') || null;
   let lastQuestion = '';
+  let pendingEmail = '';    // held across signup → verify → login flow
+  let pendingPass  = '';
 
   const delay = ms => new Promise(r => setTimeout(r, ms));
 
@@ -366,7 +404,14 @@
   }
 
   // ── LOGIN ────────────────────────────────────────────────────────────────
+  function hideAllScreens() {
+    ['login-screen','signup-screen','verify-screen'].forEach(id => {
+      document.getElementById(id).style.display = 'none';
+    });
+  }
+
   function showLoginScreen() {
+    hideAllScreens();
     document.getElementById('login-screen').style.display = 'block';
     document.getElementById('username-input').focus();
     setStatus('AWAITING AUTHENTICATION');
@@ -380,6 +425,149 @@
     pInput.addEventListener('focus', () => { curP.style.display='inline-block'; curU.style.display='none'; });
     uInput.addEventListener('keydown', e => { if (e.key === 'Enter') pInput.focus(); });
     pInput.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+
+    document.getElementById('goto-signup-btn').addEventListener('click', showSignupScreen);
+  }
+
+  // ── SIGN UP ──────────────────────────────────────────────────────────────
+  function showSignupScreen() {
+    hideAllScreens();
+    document.getElementById('signup-screen').style.display = 'block';
+    document.getElementById('signup-email').focus();
+    setStatus('CREATE ACCOUNT');
+
+    const eInput = document.getElementById('signup-email');
+    const pInput = document.getElementById('signup-pass');
+    const cInput = document.getElementById('signup-confirm');
+
+    eInput.addEventListener('keydown', e => { if (e.key === 'Enter') pInput.focus(); });
+    pInput.addEventListener('keydown', e => { if (e.key === 'Enter') cInput.focus(); });
+    cInput.addEventListener('keydown', e => { if (e.key === 'Enter') doSignup(); });
+
+    document.getElementById('goto-login-btn').addEventListener('click', showLoginScreen);
+  }
+
+  async function doSignup() {
+    const email   = document.getElementById('signup-email').value.trim();
+    const pass    = document.getElementById('signup-pass').value;
+    const confirm = document.getElementById('signup-confirm').value;
+    const errEl   = document.getElementById('signup-error');
+    errEl.textContent = '';
+
+    if (!email || !pass)          { errEl.textContent = 'ERROR: EMAIL AND PASSWORD REQUIRED'; return; }
+    if (pass !== confirm)         { errEl.textContent = 'ERROR: PASSWORDS DO NOT MATCH'; return; }
+    if (pass.length < 8)          { errEl.textContent = 'ERROR: PASSWORD MUST BE AT LEAST 8 CHARACTERS'; return; }
+    if (!/[A-Z]/.test(pass))      { errEl.textContent = 'ERROR: PASSWORD MUST CONTAIN AN UPPERCASE LETTER'; return; }
+    if (!/[0-9]/.test(pass))      { errEl.textContent = 'ERROR: PASSWORD MUST CONTAIN A NUMBER'; return; }
+
+    setStatus('CREATING ACCOUNT', true);
+    try {
+      const res  = await fetch(COGNITO, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-amz-json-1.1',
+          'X-Amz-Target': 'AWSCognitoIdentityProviderService.SignUp'
+        },
+        body: JSON.stringify({ ClientId: CLIENT_ID, Username: email, Password: pass })
+      });
+      const data = await res.json();
+
+      if (data.__type) {
+        const msg = {
+          'UsernameExistsException': 'AN ACCOUNT WITH THIS EMAIL ALREADY EXISTS',
+          'InvalidPasswordException': 'PASSWORD DOES NOT MEET REQUIREMENTS',
+          'InvalidParameterException': 'INVALID EMAIL ADDRESS',
+        }[data.__type] || data.message || data.__type;
+        errEl.textContent = `ERROR: ${msg.toUpperCase()}`;
+        setStatus('CREATE ACCOUNT');
+        return;
+      }
+
+      pendingEmail = email;
+      pendingPass  = pass;
+      showVerifyScreen();
+
+    } catch (err) {
+      errEl.textContent = `NETWORK ERROR: ${err.message}`;
+      setStatus('CONNECTION ERROR');
+    }
+  }
+
+  // ── VERIFY ───────────────────────────────────────────────────────────────
+  function showVerifyScreen() {
+    hideAllScreens();
+    document.getElementById('verify-screen').style.display = 'block';
+    document.getElementById('verify-code').focus();
+    setStatus('AWAITING VERIFICATION CODE');
+
+    document.getElementById('verify-code').addEventListener('keydown', e => {
+      if (e.key === 'Enter') doVerify();
+    });
+    document.getElementById('resend-btn').addEventListener('click', doResend);
+  }
+
+  async function doVerify() {
+    const code  = document.getElementById('verify-code').value.trim();
+    const errEl = document.getElementById('verify-error');
+    errEl.textContent = '';
+
+    if (!code) { errEl.textContent = 'ERROR: ENTER YOUR 6-DIGIT CODE'; return; }
+
+    setStatus('VERIFYING', true);
+    try {
+      const res  = await fetch(COGNITO, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-amz-json-1.1',
+          'X-Amz-Target': 'AWSCognitoIdentityProviderService.ConfirmSignUp'
+        },
+        body: JSON.stringify({ ClientId: CLIENT_ID, Username: pendingEmail, ConfirmationCode: code })
+      });
+      const data = await res.json();
+
+      if (data.__type) {
+        const msg = {
+          'CodeMismatchException':   'INCORRECT CODE — PLEASE TRY AGAIN',
+          'ExpiredCodeException':    'CODE EXPIRED — REQUEST A NEW ONE BELOW',
+          'NotAuthorizedException':  'ACCOUNT ALREADY CONFIRMED',
+        }[data.__type] || data.message || data.__type;
+        errEl.textContent = `ERROR: ${msg.toUpperCase()}`;
+        setStatus('VERIFICATION FAILED');
+        return;
+      }
+
+      // Auto-login after successful confirmation
+      setStatus('ACCOUNT CONFIRMED — LOGGING IN', true);
+      document.getElementById('username-input').value = pendingEmail;
+      document.getElementById('password-input').value = pendingPass;
+      await doLogin();
+
+    } catch (err) {
+      errEl.textContent = `NETWORK ERROR: ${err.message}`;
+      setStatus('CONNECTION ERROR');
+    }
+  }
+
+  async function doResend() {
+    const errEl = document.getElementById('verify-error');
+    errEl.textContent = '';
+    setStatus('RESENDING CODE', true);
+    try {
+      await fetch(COGNITO, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-amz-json-1.1',
+          'X-Amz-Target': 'AWSCognitoIdentityProviderService.ResendConfirmationCode'
+        },
+        body: JSON.stringify({ ClientId: CLIENT_ID, Username: pendingEmail })
+      });
+      errEl.style.color = 'var(--green-dim)';
+      errEl.textContent = 'NEW CODE SENT — CHECK YOUR EMAIL';
+      setStatus('AWAITING VERIFICATION CODE');
+    } catch (err) {
+      errEl.textContent = `NETWORK ERROR: ${err.message}`;
+      setStatus('CONNECTION ERROR');
+    }
   }
 
   async function doLogin() {

@@ -563,8 +563,13 @@ The rest of the system (query Lambda, API Gateway, Cognito, Guardrails) is fully
 # Install dependencies (one time)
 pip3 install youtube-transcript-api requests boto3 --break-system-packages
 
-# Run after Sunday service
+# Configure env vars (copy example)
+cp .env.example .env
+# edit .env with your bucket/channel/key
+
+# Load env vars and run
 cd ~/pulpit
+set -a && source .env && set +a
 python3 scripts/ingest-local.py
 ```
 
@@ -579,5 +584,65 @@ Bucket:  pulpit-transcripts-dev-636305658578
   EXIST 2026-04-05  주일 4부 예배 (already indexed)
 ────────────────────────────────────────────────────────────
 Ingested: 2  |  Skipped: 1  |  Errors: 0
+```
+
+---
+
+## Scheduling Ingestion (Cron Job)
+
+If OAuth captions access isn’t available, the reliable approach is to **run ingestion from a residential / church-office internet connection** on a small always-on machine (Mac mini, office desktop, home server). This avoids YouTube blocking cloud IP ranges.
+
+### macOS (launchd) — recommended for a Mac mini
+
+Create `~/Library/LaunchAgents/com.pulpit.ingest.plist`:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key><string>com.pulpit.ingest</string>
+    <key>StartCalendarInterval</key>
+    <dict>
+      <key>Weekday</key><integer>1</integer>
+      <key>Hour</key><integer>17</integer>
+      <key>Minute</key><integer>0</integer>
+    </dict>
+    <key>WorkingDirectory</key><string>/Users/YOUR_USER/pulpit</string>
+    <key>ProgramArguments</key>
+    <array>
+      <string>/bin/zsh</string>
+      <string>-lc</string>
+      <string>set -a && source /Users/YOUR_USER/pulpit/.env && set +a && /usr/bin/python3 /Users/YOUR_USER/pulpit/scripts/ingest-local.py</string>
+    </array>
+    <key>StandardOutPath</key><string>/Users/YOUR_USER/pulpit/ingest.log</string>
+    <key>StandardErrorPath</key><string>/Users/YOUR_USER/pulpit/ingest.err.log</string>
+  </dict>
+</plist>
+```
+
+Notes:
+- `Weekday=1` is Sunday. `Hour=17` is 5pm. `launchd` uses the Mac’s local timezone.
+- Replace `YOUR_USER` with your macOS username.
+
+Load it:
+
+```bash
+launchctl load ~/Library/LaunchAgents/com.pulpit.ingest.plist
+launchctl list | grep pulpit
+```
+
+### Linux (cron)
+
+Example (runs Mondays at 8am local time):
+
+```bash
+crontab -e
+```
+
+Add:
+
+```bash
+0 8 * * 1 cd /opt/pulpit && set -a && . /opt/pulpit/.env && set +a && /usr/bin/python3 /opt/pulpit/scripts/ingest-local.py >> /opt/pulpit/ingest.log 2>> /opt/pulpit/ingest.err.log
 ```
 
