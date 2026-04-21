@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PULPIT // Atlanta Bethel Church</title>
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=VT323&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --green:      #00ff41;
+      --green-dim:  #00aa2a;
+      --green-dark: #003d0e;
+      --amber:      #ffb000;
+      --bg:         #0a0a0a;
+      --scanline:   rgba(0,255,65,0.03);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: var(--bg);
+      color: var(--green);
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 15px;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* CRT scanlines */
+    body::before {
+      content: '';
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: repeating-linear-gradient(
+        0deg, transparent, transparent 2px,
+        var(--scanline) 2px, var(--scanline) 4px
+      );
+      pointer-events: none;
+      z-index: 100;
+    }
+
+    /* CRT vignette */
+    body::after {
+      content: '';
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.7) 100%);
+      pointer-events: none;
+      z-index: 99;
+    }
+
+    .terminal {
+      max-width: 780px;
+      margin: 0 auto;
+      padding: 40px 24px 80px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .header { margin-bottom: 28px; animation: flicker 10s infinite; }
+
+    .title-line {
+      display: block;
+      font-family: 'VT323', monospace;
+      font-size: 72px;
+      line-height: 1;
+      letter-spacing: 16px;
+      color: var(--green);
+      text-shadow: 0 0 30px rgba(0,255,65,0.4), 0 0 60px rgba(0,255,65,0.15);
+    }
+
+    .subtitle {
+      display: block;
+      font-size: 11px;
+      letter-spacing: 4px;
+      color: var(--green-dim);
+      margin-top: 6px;
+    }
+
+    .divider {
+      color: var(--green-dark);
+      margin: 16px 0;
+      letter-spacing: 1px;
+    }
+
+    /* Boot */
+    .boot-line {
+      color: var(--green-dim);
+      font-size: 12px;
+      line-height: 1.9;
+      opacity: 0;
+      transition: opacity 0.05s;
+    }
+
+    #login-screen, #query-screen { display: none; }
+
+    /* Inputs */
+    .input-row {
+      display: flex;
+      align-items: center;
+      margin: 18px 0 6px;
+      gap: 8px;
+    }
+
+    .prompt { color: var(--amber); white-space: nowrap; flex-shrink: 0; }
+
+    .terminal-input {
+      background: transparent;
+      border: none;
+      border-bottom: 1px solid var(--green-dark);
+      color: var(--green);
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 15px;
+      outline: none;
+      flex: 1;
+      padding: 2px 4px;
+      caret-color: transparent;
+    }
+
+    /* Blinking cursor */
+    .cursor {
+      display: inline-block;
+      width: 9px;
+      height: 15px;
+      background: var(--green);
+      vertical-align: middle;
+      animation: blink 1s step-end infinite;
+      flex-shrink: 0;
+      box-shadow: 0 0 6px var(--green);
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0; }
+    }
+
+    /* Query row */
+    .query-row {
+      display: flex;
+      align-items: flex-start;
+      margin-top: 28px;
+      gap: 8px;
+    }
+
+    #question-input {
+      background: transparent;
+      border: none;
+      color: var(--green);
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 15px;
+      outline: none;
+      flex: 1;
+      resize: none;
+      height: 24px;
+      overflow: hidden;
+      line-height: 1.6;
+      caret-color: var(--green);
+    }
+
+    #question-input::placeholder { color: var(--green-dark); }
+
+    /* Response */
+    .response-block {
+      margin-top: 20px;
+      border-left: 2px solid var(--green-dim);
+      padding-left: 16px;
+    }
+
+    .response-label {
+      color: var(--amber);
+      font-size: 11px;
+      letter-spacing: 3px;
+      margin-bottom: 10px;
+    }
+
+    #response-text {
+      line-height: 1.9;
+      white-space: pre-wrap;
+      min-height: 24px;
+    }
+
+    /* History */
+    .history-entry {
+      margin-bottom: 24px;
+      border-top: 1px solid var(--green-dark);
+      padding-top: 18px;
+    }
+
+    .history-q { color: var(--amber); margin-bottom: 8px; }
+    .history-a { color: var(--green-dim); white-space: pre-wrap; line-height: 1.9; }
+
+    /* Hint */
+    .hint {
+      color: var(--green-dark);
+      font-size: 11px;
+      margin-top: 8px;
+      letter-spacing: 1px;
+    }
+
+    .cmd-link {
+      color: var(--green-dark);
+      cursor: pointer;
+      font-size: 11px;
+      border-bottom: 1px solid var(--green-dark);
+      margin-left: 12px;
+    }
+    .cmd-link:hover { color: var(--green-dim); border-color: var(--green-dim); }
+
+    /* Error */
+    .error-text { color: #ff4444; }
+
+    /* Auth note */
+    .auth-note {
+      color: var(--green-dark);
+      font-size: 11px;
+      margin-top: 16px;
+      line-height: 1.8;
+      border-left: 2px solid var(--green-dark);
+      padding-left: 12px;
+    }
+
+    /* Status bar */
+    .status-bar {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      background: var(--green);
+      color: var(--bg);
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 12px;
+      padding: 4px 24px;
+      display: flex;
+      justify-content: space-between;
+      z-index: 200;
+      letter-spacing: 1px;
+    }
+
+    .loading::after {
+      content: ' .';
+      animation: dots 1.2s infinite;
+    }
+
+    @keyframes dots {
+      0%   { content: ' .'; }
+      33%  { content: ' ..'; }
+      66%  { content: ' ...'; }
+      100% { content: ' .'; }
+    }
+
+    @keyframes flicker {
+      0%, 94%, 100% { opacity: 1; }
+      95%           { opacity: 0.85; }
+      96%           { opacity: 1; }
+      97%           { opacity: 0.7; }
+      98%           { opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="terminal">
+
+  <div class="header">
+    <span class="title-line">PULPIT</span>
+    <span class="subtitle">ATLANTA BETHEL CHURCH &nbsp;//&nbsp; SERMON INTELLIGENCE SYSTEM v1.0</span>
+  </div>
+
+  <div class="divider">────────────────────────────────────────────────────────────────</div>
+
+  <!-- BOOT -->
+  <div id="boot-screen"></div>
+
+  <!-- LOGIN -->
+  <div id="login-screen">
+    <div class="input-row">
+      <span class="prompt">USER://</span>
+      <input class="terminal-input" id="username-input" type="text" autocomplete="off" spellcheck="false">
+      <span class="cursor" id="cursor-u"></span>
+    </div>
+    <div class="input-row">
+      <span class="prompt">PASS://</span>
+      <input class="terminal-input" id="password-input" type="password" autocomplete="off">
+      <span class="cursor" id="cursor-p" style="display:none"></span>
+    </div>
+    <div class="hint">[ PRESS ENTER TO AUTHENTICATE ]</div>
+    <div id="login-error" class="error-text" style="margin-top:10px; font-size:12px;"></div>
+    <div class="auth-note">
+      NEW USER? CREATE ACCOUNT VIA AWS CLI:<br><br>
+      aws cognito-idp sign-up \<br>
+      &nbsp;&nbsp;--client-id 26eit6g1j6qmfk3jp0m8uat58i \<br>
+      &nbsp;&nbsp;--username you@email.com \<br>
+      &nbsp;&nbsp;--password YourPass1!<br><br>
+      aws cognito-idp admin-confirm-sign-up \<br>
+      &nbsp;&nbsp;--user-pool-id us-east-1_h9uVjOm3V \<br>
+      &nbsp;&nbsp;--username you@email.com
+    </div>
+  </div>
+
+  <!-- QUERY -->
+  <div id="query-screen">
+    <div id="history"></div>
+
+    <div class="query-row">
+      <span class="prompt" style="padding-top:3px;">&gt;</span>
+      <textarea id="question-input"
+        placeholder="ask a question about our sermons..."
+        rows="1" spellcheck="false" autocomplete="off"></textarea>
+      <span class="cursor" id="cursor-q"></span>
+    </div>
+
+    <div class="hint">
+      [ ENTER TO SEARCH &nbsp;·&nbsp; SHIFT+ENTER FOR NEW LINE ]
+      <span class="cmd-link" id="clear-btn">CLEAR</span>
+      <span class="cmd-link" id="logout-btn">LOGOUT</span>
+    </div>
+
+    <div class="response-block" id="response-block" style="display:none">
+      <div class="response-label">&#9658; SYSTEM RESPONSE</div>
+      <div id="response-text"></div>
+    </div>
+  </div>
+
+</div>
+
+<div class="status-bar">
+  <span>PULPIT &nbsp;//&nbsp; ATLANTA BETHEL CHURCH</span>
+  <span id="status-right">INITIALIZING</span>
+</div>
+
+<script>
+  const API_URL    = 'https://6nlf91miid.execute-api.us-east-1.amazonaws.com/dev/query';
+  const COGNITO    = 'https://cognito-idp.us-east-1.amazonaws.com/';
+  const CLIENT_ID  = '26eit6g1j6qmfk3jp0m8uat58i';
+  const POOL_ID    = 'us-east-1_h9uVjOm3V';
+
+  let idToken = sessionStorage.getItem('pulpit_token') || null;
+  let lastQuestion = '';
+
+  const delay = ms => new Promise(r => setTimeout(r, ms));
+
+  // ── BOOT ────────────────────────────────────────────────────────────────
+  const BOOT_LINES = [
+    { text: 'INITIALIZING PULPIT SYSTEM...',              color: null },
+    { text: 'LOADING SERMON ARCHIVE [2026]...',            color: null },
+    { text: 'CONNECTING TO AWS BEDROCK // NOVA LITE...',   color: null },
+    { text: 'GUARDRAILS: ■ ACTIVE',                        color: 'var(--green)' },
+    { text: 'COGNITO AUTH: ■ READY',                       color: 'var(--green)' },
+    { text: 'DYNAMODB AUDIT LOG: ■ CONNECTED',             color: 'var(--green)' },
+    { text: '────────────────────────────────────────────────────────────────', color: 'var(--green-dark)' },
+    { text: 'SYSTEM READY.',                               color: 'var(--amber)' },
+    { text: '',                                            color: null },
+  ];
+
+  async function boot() {
+    const screen = document.getElementById('boot-screen');
+    for (const line of BOOT_LINES) {
+      await delay(100);
+      const el = document.createElement('div');
+      el.className = 'boot-line';
+      el.textContent = line.text || '\u00a0';
+      if (line.color) el.style.color = line.color;
+      screen.appendChild(el);
+      el.style.opacity = '1';
+    }
+    await delay(200);
+    idToken ? showQueryScreen() : showLoginScreen();
+  }
+
+  // ── LOGIN ────────────────────────────────────────────────────────────────
+  function showLoginScreen() {
+    document.getElementById('login-screen').style.display = 'block';
+    document.getElementById('username-input').focus();
+    setStatus('AWAITING AUTHENTICATION');
+
+    const uInput = document.getElementById('username-input');
+    const pInput = document.getElementById('password-input');
+    const curU   = document.getElementById('cursor-u');
+    const curP   = document.getElementById('cursor-p');
+
+    uInput.addEventListener('focus', () => { curU.style.display='inline-block'; curP.style.display='none'; });
+    pInput.addEventListener('focus', () => { curP.style.display='inline-block'; curU.style.display='none'; });
+    uInput.addEventListener('keydown', e => { if (e.key === 'Enter') pInput.focus(); });
+    pInput.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+  }
+
+  async function doLogin() {
+    const username = document.getElementById('username-input').value.trim();
+    const password = document.getElementById('password-input').value;
+    const errEl    = document.getElementById('login-error');
+
+    if (!username || !password) {
+      errEl.textContent = 'ERROR: USERNAME AND PASSWORD REQUIRED';
+      return;
+    }
+
+    errEl.textContent = '';
+    setStatus('AUTHENTICATING', true);
+
+    try {
+      const res  = await fetch(COGNITO, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-amz-json-1.1',
+          'X-Amz-Target': 'AWSCognitoIdentityProviderService.InitiateAuth'
+        },
+        body: JSON.stringify({
+          AuthFlow: 'USER_PASSWORD_AUTH',
+          AuthParameters: { USERNAME: username, PASSWORD: password },
+          ClientId: CLIENT_ID
+        })
+      });
+      const data = await res.json();
+
+      if (data.AuthenticationResult?.IdToken) {
+        idToken = data.AuthenticationResult.IdToken;
+        sessionStorage.setItem('pulpit_token', idToken);
+        document.getElementById('login-screen').style.display = 'none';
+        showQueryScreen();
+      } else {
+        const msg = {
+          'NotAuthorizedException':    'INVALID CREDENTIALS',
+          'UserNotConfirmedException': 'ACCOUNT NOT CONFIRMED — SEE INSTRUCTIONS BELOW',
+          'UserNotFoundException':     'USER NOT FOUND',
+        }[data.__type] || (data.__type || 'AUTHENTICATION FAILED');
+        errEl.textContent = `ERROR: ${msg}`;
+        setStatus('AUTH FAILED');
+      }
+    } catch (err) {
+      errEl.textContent = `NETWORK ERROR: ${err.message}`;
+      setStatus('CONNECTION ERROR');
+    }
+  }
+
+  // ── QUERY ────────────────────────────────────────────────────────────────
+  function showQueryScreen() {
+    document.getElementById('query-screen').style.display = 'block';
+    document.getElementById('question-input').focus();
+    setStatus('AUTHENTICATED // READY');
+
+    const input  = document.getElementById('question-input');
+    const cursorQ = document.getElementById('cursor-q');
+
+    input.addEventListener('input', () => {
+      input.style.height = 'auto';
+      input.style.height = input.scrollHeight + 'px';
+    });
+
+    input.addEventListener('focus', () => cursorQ.style.display = 'inline-block');
+    input.addEventListener('blur',  () => cursorQ.style.display = 'none');
+
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doQuery(); }
+    });
+
+    document.getElementById('logout-btn').addEventListener('click', () => {
+      sessionStorage.removeItem('pulpit_token');
+      location.reload();
+    });
+
+    document.getElementById('clear-btn').addEventListener('click', () => {
+      document.getElementById('history').innerHTML = '';
+      document.getElementById('response-block').style.display = 'none';
+      lastQuestion = '';
+    });
+  }
+
+  async function doQuery() {
+    const input    = document.getElementById('question-input');
+    const question = input.value.trim();
+    if (!question) return;
+
+    // Archive previous to history
+    const prevBlock = document.getElementById('response-block');
+    if (prevBlock.style.display !== 'none' && lastQuestion) {
+      const entry = document.createElement('div');
+      entry.className = 'history-entry';
+      entry.innerHTML =
+        `<div class="history-q">&gt; ${esc(lastQuestion)}</div>` +
+        `<div class="history-a">${esc(document.getElementById('response-text').textContent)}</div>`;
+      document.getElementById('history').appendChild(entry);
+    }
+
+    lastQuestion = question;
+    input.value = '';
+    input.style.height = 'auto';
+
+    const respEl = document.getElementById('response-text');
+    prevBlock.style.display = 'block';
+    respEl.textContent = '';
+    respEl.classList.remove('error-text');
+
+    setStatus('SEARCHING SERMON ARCHIVE', true);
+
+    try {
+      const res  = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': idToken },
+        body: JSON.stringify({ question })
+      });
+
+      const data = await res.json();
+      setStatus('AUTHENTICATED // READY');
+
+      if (res.status === 401) {
+        sessionStorage.removeItem('pulpit_token');
+        respEl.classList.add('error-text');
+        respEl.textContent = 'SESSION EXPIRED. PLEASE RELOAD AND LOG IN AGAIN.';
+        setStatus('SESSION EXPIRED');
+        return;
+      }
+
+      await typeWriter(respEl, data.answer || data.error || 'NO RESPONSE RECEIVED.');
+
+    } catch (err) {
+      setStatus('CONNECTION ERROR');
+      respEl.classList.add('error-text');
+      respEl.textContent = `CONNECTION ERROR: ${err.message}`;
+    }
+
+    input.focus();
+  }
+
+  // ── TYPEWRITER ────────────────────────────────────────────────────────────
+  async function typeWriter(el, text) {
+    el.textContent = '';
+    const speed = 3; // chars per tick
+    for (let i = 0; i < text.length; i += speed) {
+      el.textContent += text.slice(i, i + speed);
+      if (i % 60 === 0) await delay(16);
+    }
+    el.textContent = text;
+  }
+
+  // ── UTILS ─────────────────────────────────────────────────────────────────
+  function setStatus(msg, loading = false) {
+    const el = document.getElementById('status-right');
+    el.textContent = msg;
+    el.className = loading ? 'loading' : '';
+  }
+
+  function esc(str) {
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  boot();
+</script>
+</body>
+</html>
