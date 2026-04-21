@@ -118,7 +118,7 @@ def load_sermons(question):
 
     try:
         paginator = s3.get_paginator("list_objects_v2")
-        pages = paginator.paginate(Bucket=BUCKET, Prefix="transcripts/")
+        pages = paginator.paginate(Bucket=BUCKET, Prefix="transcripts/2026/")
 
         for page in pages:
             for obj in page.get("Contents", []):
