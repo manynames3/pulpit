@@ -17,6 +17,7 @@ Requirements:
 """
 
 import json
+import time
 import boto3
 import requests
 from datetime import datetime, timezone
@@ -160,6 +161,16 @@ for video in videos:
         skipped.append(vid)
         continue
 
+    # Skip videos that are clearly not sermons
+    # Shorts, announcements, highlights rarely have transcripts
+    skip_keywords = ["#shorts", "교회소식", "하이라이트", "간증 영상",
+                     "소풍", "수련회", "달란트", "Lock-In", "lock-in",
+                     "환영인사", "감사의 말씀ㅣ", "소개"]
+    if any(kw.lower() in title.lower() for kw in skip_keywords):
+        print(f"  SKIP  {date}  {title} (non-sermon)")
+        skipped.append(vid)
+        continue
+
     result = fetch_transcript(vid)
 
     if isinstance(result, tuple):
@@ -167,11 +178,13 @@ for video in videos:
         print(f"  ERROR {date}  {title}")
         print(f"         → {err[:80]}")
         errors.append(vid)
+        time.sleep(2)  # back off on error
         continue
 
     store_sermon(video, result)
     print(f"  ✅    {date}  {title}")
     ingested.append(vid)
+    time.sleep(1)  # be polite to YouTube
 
 print("─" * 60)
 print(f"Ingested: {len(ingested)}  |  Already exists: {len(skipped)}  |  Errors: {len(errors)}")
