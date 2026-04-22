@@ -352,6 +352,10 @@
     <div class="response-block" id="response-block" style="display:none">
       <div class="response-label">&#9658; SYSTEM RESPONSE</div>
       <div id="response-text"></div>
+      <div id="sources-block" style="display:none; margin-top:18px; border-top:1px solid var(--green-dim); padding-top:12px;">
+        <div style="font-size:11px; color:var(--green-dim); margin-bottom:8px; letter-spacing:0.1em;">&#9658; SOURCE SERMONS</div>
+        <div id="sources-list"></div>
+      </div>
     </div>
   </div>
 
@@ -647,6 +651,8 @@
     document.getElementById('clear-btn').addEventListener('click', () => {
       document.getElementById('history').innerHTML = '';
       document.getElementById('response-block').style.display = 'none';
+      document.getElementById('sources-block').style.display = 'none';
+      document.getElementById('sources-list').innerHTML = '';
       lastQuestion = '';
     });
   }
@@ -697,6 +703,39 @@
       }
 
       await typeWriter(respEl, data.answer || data.error || 'NO RESPONSE RECEIVED.');
+
+      // Render source sermon links
+      const sourcesBlock = document.getElementById('sources-block');
+      const sourcesList  = document.getElementById('sources-list');
+      sourcesList.innerHTML = '';
+      const sources = data.sources || [];
+      if (sources.length > 0) {
+        sources.forEach((s, i) => {
+          const link = document.createElement('a');
+          link.href        = s.youtube_url;
+          link.target      = '_blank';
+          link.rel         = 'noopener noreferrer';
+          link.textContent = `[${String(i+1).padStart(2,'0')}] ${s.date}  ${s.title}`;
+          link.style.cssText = [
+            'display:block',
+            'color:var(--green)',
+            'text-decoration:none',
+            'font-size:12px',
+            'padding:4px 0',
+            'border-bottom:1px solid rgba(0,255,65,0.1)',
+            'white-space:nowrap',
+            'overflow:hidden',
+            'text-overflow:ellipsis',
+            'transition:color 0.15s'
+          ].join(';');
+          link.addEventListener('mouseover', () => link.style.color = '#fff');
+          link.addEventListener('mouseout',  () => link.style.color = 'var(--green)');
+          sourcesList.appendChild(link);
+        });
+        sourcesBlock.style.display = 'block';
+      } else {
+        sourcesBlock.style.display = 'none';
+      }
 
     } catch (err) {
       setStatus('CONNECTION ERROR');
