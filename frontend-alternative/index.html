@@ -1983,9 +1983,28 @@
           return;
         }
 
+        if (data.__type === "UserNotConfirmedException") {
+          pendingEmail = username;
+          pendingPass = password;
+          showAuthScreen("verify-screen");
+          setStatus("Awaiting verification");
+
+          const resend = await cognitoRequest("AWSCognitoIdentityProviderService.ResendConfirmationCode", {
+            ClientId: CLIENT_ID,
+            Username: username
+          });
+
+          if (!resend.__type) {
+            showMessage("verify-success", "This account still needs email verification. A fresh verification code has been sent.");
+            return;
+          }
+
+          showMessage("verify-error", "This account still needs email verification. Enter your code below or request a new one.");
+          return;
+        }
+
         const message = {
           NotAuthorizedException: "The email or password is incorrect.",
-          UserNotConfirmedException: "This account still needs email verification.",
           UserNotFoundException: "No account matched that email."
         }[data.__type] || data.__type || "Authentication failed.";
 
