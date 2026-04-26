@@ -47,6 +47,7 @@ TOP_K           = 5     # sermons sent to Nova Lite
 FALLBACK_LIMIT  = 30    # max sermons if index has no embeddings yet
 CACHE_TTL_DAYS  = 30
 INDEX_TTL_SEC   = 600   # reload index every 10 min to pick up new sermons
+MIN_RELEVANCE_SCORE = 0.35
 
 CRISIS_KEYWORDS = [
     "suicide", "kill myself", "self harm", "abuse", "hurt myself",
@@ -102,9 +103,10 @@ def lambda_handler(event, context):
         if not sermons:
             return response(200, {
                 "answer": (
-                    "No sermons in the archive yet. "
-                    "Check back after the next ingestion run."
-                )
+                    "I could not find a sermon in the archive that clearly addresses that topic. "
+                    "Try a broader keyword, a Bible passage, or a more specific sermon question."
+                ),
+                "sources": []
             })
 
         # 3. Generate answer
@@ -162,6 +164,9 @@ def find_relevant_sermons(question):
             top = ranked[:TOP_K]
             scores = [score for _, score in top]
             print(f"Top {TOP_K} similarity scores: {[f'{s:.3f}' for s in scores]}")
+            if not scores or scores[0] < MIN_RELEVANCE_SCORE:
+                print(f"Top score {scores[0] if scores else 'n/a'} below threshold {MIN_RELEVANCE_SCORE}")
+                return []
             return [entry for entry, _ in top]  # return full index entries (have transcript)
 
     # Fallback: no embeddings yet — return most recent sermons
@@ -284,6 +289,9 @@ def check_cache(question):
         table = dynamodb.Table(CACHE_TABLE)
         item  = table.get_item(Key={"questionHash": question_hash(question)}).get("Item")
         if item:
+            if "sources" not in item:
+                print("Cache miss: legacy entry missing sources")
+                return None
             print("Cache hit")
             return {
                 "answer":           item["answer"],
