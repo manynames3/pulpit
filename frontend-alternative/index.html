@@ -1761,7 +1761,13 @@
         const data = await cognitoRequest("AWSCognitoIdentityProviderService.SignUp", {
           ClientId: CLIENT_ID,
           Username: email,
-          Password: pass
+          Password: pass,
+          UserAttributes: [
+            {
+              Name: "email",
+              Value: email
+            }
+          ]
         });
 
         if (data.__type) {

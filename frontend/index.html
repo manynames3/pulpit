@@ -472,7 +472,17 @@
           'Content-Type': 'application/x-amz-json-1.1',
           'X-Amz-Target': 'AWSCognitoIdentityProviderService.SignUp'
         },
-        body: JSON.stringify({ ClientId: CLIENT_ID, Username: email, Password: pass })
+        body: JSON.stringify({
+          ClientId: CLIENT_ID,
+          Username: email,
+          Password: pass,
+          UserAttributes: [
+            {
+              Name: 'email',
+              Value: email
+            }
+          ]
+        })
       });
       const data = await res.json();
 

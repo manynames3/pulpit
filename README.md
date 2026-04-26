@@ -403,6 +403,49 @@ This section documents every real problem encountered during deployment and how 
 
 ---
 
+### Issue 0 — Cognito Signup Created Unconfirmed Users But Sent No Email
+
+**Symptom:** Users could sign up, but login returned `This account still needs email verification` and no verification email ever arrived.
+
+**Diagnosis:** Two configuration problems were stacked:
+1. The Cognito user pool had `EmailSendingAccount=COGNITO_DEFAULT`, but `AutoVerifiedAttributes` was empty, so Cognito was not set to auto-verify email.
+2. The frontend signup request only sent `Username` and `Password`. It did not send `UserAttributes: [{ Name: "email", Value: email }]`, so Cognito created users without an `email` attribute.
+
+**Observed evidence:**
+- `describe-user-pool` showed `AutoVerifiedAttributes: null`
+- `list-users` showed affected users in `UNCONFIRMED` state with only a `sub` attribute
+- `sign-up` responses returned `UserConfirmed: false` with no `CodeDeliveryDetails`
+
+**Live fix applied:**
+```bash
+aws cognito-idp update-user-pool \
+  --user-pool-id us-east-1_h9uVjOm3V \
+  --auto-verified-attributes email
+
+aws cognito-idp admin-update-user-attributes \
+  --user-pool-id us-east-1_h9uVjOm3V \
+  --username hangi87@aol.com \
+  --user-attributes Name=email,Value=hangi87@aol.com
+
+aws cognito-idp resend-confirmation-code \
+  --client-id 26eit6g1j6qmfk3jp0m8uat58i \
+  --username hangi87@aol.com
+```
+
+The same attribute update and resend step was also applied to `hangi87@aim.com`.
+
+**Permanent code fix:**
+- Added `auto_verified_attributes = ["email"]` to `modules/query/cognito.tf`
+- Updated both frontends to send the `email` user attribute during `SignUp`
+
+**Verification after fix:**
+- `describe-user-pool` now shows `AutoVerifiedAttributes: ["email"]`
+- `resend-confirmation-code` now returns `CodeDeliveryDetails` with `DeliveryMedium: EMAIL`
+
+**Lesson:** In Cognito, an email-looking username is not enough. If signup depends on email confirmation, the pool must auto-verify email and the client must submit the `email` attribute explicitly.
+
+---
+
 ### Issue 1 — Terraform Format Check (CI exit code 3)
 
 **Symptom:** GitHub Actions failing immediately with `Terraform exited with code 3`.
