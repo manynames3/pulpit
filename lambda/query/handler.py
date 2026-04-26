@@ -25,6 +25,7 @@ import os
 import uuid
 import math
 import hashlib
+import re
 import boto3
 from datetime import datetime, timezone
 
@@ -48,6 +49,7 @@ FALLBACK_LIMIT  = 30    # max sermons if index has no embeddings yet
 CACHE_TTL_DAYS  = 30
 INDEX_TTL_SEC   = 600   # reload index every 10 min to pick up new sermons
 MIN_RELEVANCE_SCORE = 0.35
+EXPANDED_RELEVANCE_SCORE = 0.30
 
 CRISIS_KEYWORDS = [
     "suicide", "kill myself", "self harm", "abuse", "hurt myself",
@@ -146,28 +148,27 @@ def find_relevant_sermons(question):
     entries_with_embeddings = [e for e in index if e.get("embedding")]
 
     if entries_with_embeddings:
-        q_vec = embed_text(question)
-        if q_vec:
-            scored = []
-            for entry in entries_with_embeddings:
-                score = cosine_similarity(q_vec, entry["embedding"])
-                scored.append((entry, score))
-
-            ranked = sorted(
-                scored,
-                key=lambda item: (
-                    pastor_priority(item[0]),
-                    item[1]
-                ),
-                reverse=True
-            )
+        ranked = rank_sermons(entries_with_embeddings, [question])
+        if ranked:
             top = ranked[:TOP_K]
             scores = [score for _, score in top]
             print(f"Top {TOP_K} similarity scores: {[f'{s:.3f}' for s in scores]}")
-            if not scores or scores[0] < MIN_RELEVANCE_SCORE:
-                print(f"Top score {scores[0] if scores else 'n/a'} below threshold {MIN_RELEVANCE_SCORE}")
-                return []
-            return [entry for entry, _ in top]  # return full index entries (have transcript)
+            if scores[0] >= MIN_RELEVANCE_SCORE:
+                return [entry for entry, _ in top]
+
+            variants = filter_query_variants(index, expand_query_variants(question))
+            if variants:
+                print(f"Retrying retrieval with variants: {variants}")
+                expanded_ranked = rank_sermons(entries_with_embeddings, variants)
+                if expanded_ranked:
+                    expanded_top = expanded_ranked[:TOP_K]
+                    expanded_scores = [score for _, score in expanded_top]
+                    print(f"Expanded top {TOP_K} scores: {[f'{s:.3f}' for s in expanded_scores]}")
+                    if expanded_scores[0] >= EXPANDED_RELEVANCE_SCORE:
+                        return [entry for entry, _ in expanded_top]
+
+            print(f"Top score {scores[0] if scores else 'n/a'} below thresholds {MIN_RELEVANCE_SCORE}/{EXPANDED_RELEVANCE_SCORE}")
+            return []
 
     # Fallback: no embeddings yet — return most recent sermons
     print(f"No embeddings in index — falling back to {FALLBACK_LIMIT} most recent sermons")
@@ -180,6 +181,112 @@ def pastor_priority(entry):
     if not pastor:
         return 0
     return int(LEAD_PASTOR in pastor or pastor in LEAD_PASTOR)
+
+
+def rank_sermons(entries_with_embeddings, queries):
+    vectors = []
+    for query in queries:
+        vec = embed_text(query)
+        if vec:
+            vectors.append(vec)
+
+    if not vectors:
+        return []
+
+    scored = []
+    for entry in entries_with_embeddings:
+        score = max(cosine_similarity(vec, entry["embedding"]) for vec in vectors)
+        scored.append((entry, score))
+
+    return sorted(
+        scored,
+        key=lambda item: (
+            pastor_priority(item[0]),
+            item[1]
+        ),
+        reverse=True
+    )
+
+
+def expand_query_variants(question):
+    if not should_expand_query(question):
+        return []
+
+    prompt = (
+        "Rewrite this church sermon archive search into up to 4 short search variants for a Korean sermon archive. "
+        "Prefer standard Korean Bible and church vocabulary over casual synonyms. "
+        "Include Korean equivalents, Bible names, and likely sermon keywords when helpful. "
+        "Return one variant per line only. No bullets. No explanations.\n\n"
+        f"Query: {question}"
+    )
+
+    try:
+        resp = bedrock.converse(
+            modelId=MODEL_ID,
+            messages=[{"role": "user", "content": [{"text": prompt}]}],
+            inferenceConfig={"maxTokens": 120, "temperature": 0.1}
+        )
+        raw = resp["output"]["message"]["content"][0]["text"]
+        variants = []
+        seen = {question.strip().lower()}
+
+        for line in raw.splitlines():
+            candidate = re.sub(r"^\s*(?:[-*\d.)]+)\s*", "", line).strip()
+            if not candidate or len(candidate) > 80:
+                continue
+            key = candidate.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            variants.append(candidate)
+
+        return variants[:4]
+    except Exception as e:
+        print(f"Query expansion error: {e}")
+        return []
+
+
+def should_expand_query(question):
+    q = question.strip()
+    if not q or len(q) > 120:
+        return False
+    return any("a" <= ch.lower() <= "z" for ch in q)
+
+
+def filter_query_variants(index, variants):
+    filtered = []
+    for variant in variants:
+        core = normalize_variant(variant)
+        if not core:
+            continue
+        if archive_contains_term(index, core):
+            filtered.append(core)
+    return filtered
+
+
+def normalize_variant(variant):
+    text = variant.strip()
+    text = re.sub(r"\b(?:search|sermon|bible|topic|story|archive)\b", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"(검색|설교|성경|주제|이야기|아카이브)", "", text)
+    text = re.sub(r"\s+", " ", text).strip(" -,:")
+    return text.strip()
+
+
+def archive_contains_term(index, term):
+    needle = term.lower().strip()
+    if len(needle) < 2:
+        return False
+
+    for entry in index:
+        hay = " ".join([
+            entry.get("title", ""),
+            " ".join(entry.get("topics", [])),
+            " ".join(entry.get("scripture_references", [])),
+            entry.get("transcript", "")[:4000]
+        ]).lower()
+        if needle in hay:
+            return True
+    return False
 
 
 def get_sermon_index():
@@ -292,11 +399,19 @@ def check_cache(question):
             if "sources" not in item:
                 print("Cache miss: legacy entry missing sources")
                 return None
+            answer_text = item.get("answer", "").lower()
+            sources = item.get("sources", [])
+            if sources and (
+                "none of the provided sermons address" in answer_text or
+                "does not mention a" in answer_text
+            ):
+                print("Cache miss: legacy weak-match answer")
+                return None
             print("Cache hit")
             return {
                 "answer":           item["answer"],
                 "sermons_searched": int(item.get("sermons_searched", 0)),
-                "sources":          item.get("sources", [])
+                "sources":          sources
             }
     except Exception as e:
         print(f"Cache read error: {e}")

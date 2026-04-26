@@ -770,21 +770,28 @@
     }
 
     .answer-body.loading {
-      position: relative;
-      color: transparent;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-height: 154px;
+      color: var(--ink-soft);
       user-select: none;
     }
 
-    .answer-body.loading::before {
-      content: "";
-      display: block;
-      width: 100%;
-      height: 154px;
-      border-radius: var(--radius-md);
-      background:
-        linear-gradient(90deg, rgba(225, 231, 247, 0.7) 25%, rgba(255, 255, 255, 0.95) 50%, rgba(225, 231, 247, 0.7) 75%);
-      background-size: 220% 100%;
-      animation: shimmer 1.5s linear infinite;
+    .searching-spinner {
+      width: 18px;
+      height: 18px;
+      border-radius: 999px;
+      border: 2px solid rgba(20, 49, 123, 0.18);
+      border-top-color: var(--ink);
+      animation: spin 0.8s linear infinite;
+      flex: 0 0 auto;
+    }
+
+    .searching-label {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--ink-soft);
     }
 
     .answer-note {
@@ -865,6 +872,15 @@
       }
       100% {
         background-position: -200% 0;
+      }
+    }
+
+    @keyframes spin {
+      from {
+        transform: rotate(0deg);
+      }
+      to {
+        transform: rotate(360deg);
       }
     }
 
@@ -1436,6 +1452,7 @@
     let pendingPass = "";
     let resetEmail = "";
     let activeTopic = "prayer";
+    let searchLoadingTimer = null;
 
     const $ = (id) => document.getElementById(id);
 
@@ -1676,14 +1693,26 @@
     }
 
     function setAnswerLoading() {
+      clearSearchLoading();
       const answer = $("response-text");
       answer.className = "answer-body loading";
-      answer.textContent = "Loading";
+      answer.innerHTML = '<span class="searching-spinner" aria-hidden="true"></span><span class="searching-label">Searching</span>';
       $("answer-state").textContent = "Searching";
       $("response-note").textContent = "The archive is retrieving relevant sermons and assembling a source-linked answer.";
+
+      const label = answer.querySelector(".searching-label");
+      const phases = ["Searching", "Searching.", "Searching..", "Searching..."];
+      let phaseIndex = 0;
+      searchLoadingTimer = window.setInterval(() => {
+        phaseIndex = (phaseIndex + 1) % phases.length;
+        if (label) {
+          label.textContent = phases[phaseIndex];
+        }
+      }, 350);
     }
 
     function setAnswerText(text, isError = false) {
+      clearSearchLoading();
       const answer = $("response-text");
       answer.className = isError ? "answer-body" : "answer-body";
       answer.textContent = text;
@@ -1697,6 +1726,7 @@
     }
 
     function clearWorkspace() {
+      clearSearchLoading();
       $("response-text").className = "answer-body empty-state";
       $("response-text").textContent = "Your answer will appear here with a lead-pastor bias and the supporting sermon sources listed alongside it.";
       $("answer-state").textContent = "Ready";
@@ -1706,6 +1736,13 @@
       $("question-input").value = "";
       lastQuestion = "";
       setStatus("Archive ready");
+    }
+
+    function clearSearchLoading() {
+      if (searchLoadingTimer) {
+        window.clearInterval(searchLoadingTimer);
+        searchLoadingTimer = null;
+      }
     }
 
     function logout() {
