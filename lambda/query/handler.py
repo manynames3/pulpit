@@ -270,7 +270,7 @@ def extract_literal_terms(question):
 
     for token in re.findall(r"[가-힣A-Za-z0-9]+", question.lower()):
         cleaned = token.strip()
-        if len(cleaned) < 2 or cleaned in seen:
+        if len(cleaned) < minimum_term_length(cleaned) or cleaned in seen:
             continue
         seen.add(cleaned)
         terms.append(cleaned)
@@ -305,6 +305,10 @@ def lexical_match_score(entry, terms):
             score += min(transcript_hits, 12)
 
     return score
+
+
+def minimum_term_length(term):
+    return 1 if re.fullmatch(r"[가-힣]", term) else 2
 
 
 def expand_query_variants(question):
@@ -373,7 +377,7 @@ def normalize_variant(variant):
 
 def archive_contains_term(index, term):
     needle = term.lower().strip()
-    if len(needle) < 2:
+    if len(needle) < minimum_term_length(needle):
         return False
 
     for entry in index:
