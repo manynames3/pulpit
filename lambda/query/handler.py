@@ -47,7 +47,7 @@ MIN_RELEVANCE_SCORE = 0.35
 EXPANDED_RELEVANCE_SCORE = 0.30
 MIN_HYBRID_SCORE = 0.28
 MIN_CHUNK_SEMANTIC_SCORE = 0.22
-RETRIEVAL_VERSION = "v4-chunk-hybrid-mention-gate-lang"
+RETRIEVAL_VERSION = "v5-chunk-hybrid-mention-gate-lang-structured-answer"
 
 STATIC_QUERY_VARIANTS = {
     "wilderness": ["광야"],
@@ -700,12 +700,27 @@ def build_catalog_response():
 # ── BEDROCK ────────────────────────────────────────────────────────────────
 
 def system_prompt_for_language(preferred_language):
-    language_rule = (
-        "7. Respond entirely in Korean."
-        if preferred_language == "ko"
-        else "7. Respond entirely in English."
-    )
-    return f"{SYSTEM_PROMPT}\n{language_rule}"
+    if preferred_language == "ko":
+        language_rule = "7. Respond entirely in Korean."
+        format_rule = (
+            "8. Do not include greetings, filler, or devotional sign-offs.\n"
+            "9. Format the answer for easy scanning using markdown-like structure:\n"
+            "   - Start each sermon entry with: #### 설교 N: \"설교 제목\" [YYYY-MM-DD]\n"
+            "   - Under each sermon heading, use bullet points, not dashes in prose.\n"
+            "   - Keep each bullet concise and tied to the question.\n"
+            "10. If multiple sermons are relevant, list them in order of relevance. If helpful, end with one short synthesis paragraph."
+        )
+    else:
+        language_rule = "7. Respond entirely in English."
+        format_rule = (
+            "8. Do not include greetings, filler, or devotional sign-offs.\n"
+            "9. Format the answer for easy scanning using markdown-like structure:\n"
+            "   - Start each sermon entry with: #### Sermon N: \"Sermon Title\" [YYYY-MM-DD]\n"
+            "   - Under each sermon heading, use bullet points, not prose blocks where bullets fit.\n"
+            "   - Keep each bullet concise and tied to the question.\n"
+            "10. If multiple sermons are relevant, list them in order of relevance. If helpful, end with one short synthesis paragraph."
+        )
+    return f"{SYSTEM_PROMPT}\n{language_rule}\n{format_rule}"
 
 
 def invoke_bedrock(prompt, preferred_language="en"):
