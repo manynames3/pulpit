@@ -47,7 +47,7 @@ MIN_RELEVANCE_SCORE = 0.35
 EXPANDED_RELEVANCE_SCORE = 0.30
 MIN_HYBRID_SCORE = 0.28
 MIN_CHUNK_SEMANTIC_SCORE = 0.22
-RETRIEVAL_VERSION = "v4-chunk-hybrid-mention-gate"
+RETRIEVAL_VERSION = "v4-chunk-hybrid-mention-gate-lang"
 
 STATIC_QUERY_VARIANTS = {
     "wilderness": ["광야"],
@@ -133,11 +133,7 @@ def lambda_handler(event, context):
 
         # 3. Generate answer
         sermon_context = build_sermon_context(sermons)
-        prompt         = (
-            f"{sermon_context}\n\n"
-            f"{language_instruction(preferred_language)}\n"
-            f"Question: {question}"
-        )
+        prompt         = f"{sermon_context}\n\nQuestion: {question}"
         answer         = invoke_bedrock(prompt, preferred_language)
 
         # 4. Cache + audit log
@@ -731,14 +727,6 @@ def invoke_bedrock(prompt, preferred_language="en"):
 
 def normalize_language(value):
     return "ko" if str(value or "").strip().lower() == "ko" else "en"
-
-
-def language_instruction(preferred_language):
-    return (
-        "Respond entirely in Korean. Keep citations exactly in the [Sermon Title — Date] format."
-        if preferred_language == "ko"
-        else "Respond entirely in English. Keep citations exactly in the [Sermon Title — Date] format."
-    )
 
 
 def question_hash(question, preferred_language="en"):
