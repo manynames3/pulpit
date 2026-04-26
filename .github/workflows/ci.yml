@@ -22,12 +22,20 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Build Lambda Packages
+        run: ./scripts/build-lambda.sh
 
       - name: Terraform Format Check
         run: terraform fmt -check -recursive
@@ -58,7 +66,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -74,6 +87,9 @@ jobs:
 
       - name: Terraform Init
         run: terraform init -input=false
+
+      - name: Build Lambda Packages
+        run: ./scripts/build-lambda.sh
 
       - name: Terraform Plan
         id: plan
