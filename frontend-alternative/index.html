@@ -163,6 +163,38 @@
       white-space: nowrap;
     }
 
+    .top-controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .lang-toggle {
+      display: inline-flex;
+      gap: 6px;
+      padding: 6px;
+      border-radius: 999px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow-soft);
+    }
+
+    .lang-btn {
+      padding: 8px 12px;
+      border-radius: 999px;
+      color: var(--text-soft);
+      font-size: 0.84rem;
+      font-weight: 800;
+      transition: background var(--transition), color var(--transition);
+    }
+
+    .lang-btn.active {
+      background: var(--ink);
+      color: #fff;
+    }
+
     .status-dot {
       width: 10px;
       height: 10px;
@@ -1166,9 +1198,15 @@
           <strong>Atlanta Bethel Church</strong>
         </div>
       </div>
-      <div class="status-card" id="status-card">
-        <span class="status-dot" aria-hidden="true"></span>
-        <span id="status-text">Preparing archive access</span>
+      <div class="top-controls">
+        <div class="lang-toggle" aria-label="Language toggle">
+          <button class="lang-btn active" id="lang-en-btn" type="button">EN</button>
+          <button class="lang-btn" id="lang-ko-btn" type="button">KO</button>
+        </div>
+        <div class="status-card" id="status-card">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="status-text">Preparing archive access</span>
+        </div>
       </div>
     </header>
 
@@ -1180,38 +1218,38 @@
     <section class="landing-grid" id="landing-shell">
       <section class="panel hero-panel">
         <div class="hero-top">
-          <h1 class="hero-title">The Sermon Archive</h1>
+          <h1 class="hero-title" id="hero-title">The Sermon Archive</h1>
           <p class="hero-copy">
-            <strong>Has the pastor preached about a certain topic?</strong>
-            Search the topic. Find the video. Apply the word.
+            <strong id="hero-copy-strong">Has the pastor preached about a certain topic?</strong>
+            <span id="hero-copy-text">Search the topic. Find the video. Apply the word.</span>
           </p>
         </div>
 
         <div class="hero-support-grid">
           <article class="hero-support-card">
-            <div class="section-kicker">Archive Focus</div>
-            <h2>이혜진 담임목사</h2>
-            <p>Built around the lead pastor archive first, with a tighter experience than the full public site.</p>
+            <div class="section-kicker" id="hero-focus-kicker">Archive Focus</div>
+            <h2 id="hero-focus-title">이혜진 담임목사</h2>
+            <p id="hero-focus-copy">Built around the lead pastor archive first, with a tighter experience than the full public site.</p>
           </article>
 
           <article class="hero-support-card">
-            <div class="section-kicker">Research Style</div>
-            <h2>Cited + watchable</h2>
-            <p>Search answers stay paired with sermon video links, not just generated text.</p>
+            <div class="section-kicker" id="hero-style-kicker">Research Style</div>
+            <h2 id="hero-style-title">Cited + watchable</h2>
+            <p id="hero-style-copy">Search answers stay paired with sermon video links, not just generated text.</p>
           </article>
 
           <article class="hero-support-card">
-            <div class="section-kicker">Common Use</div>
-            <h2>Topics in one click</h2>
-            <p>Prayer, grace, church health, wisdom, and faith questions can jump straight to relevant videos.</p>
+            <div class="section-kicker" id="hero-use-kicker">Common Use</div>
+            <h2 id="hero-use-title">Topics in one click</h2>
+            <p id="hero-use-copy">Prayer, grace, church health, wisdom, and faith questions can jump straight to relevant videos.</p>
           </article>
         </div>
       </section>
 
       <aside class="auth-panel panel">
-        <div class="section-kicker">Member Access</div>
-        <h2>Sign in to search the archive</h2>
-        <p class="auth-copy">
+        <div class="section-kicker" id="auth-kicker">Member Access</div>
+        <h2 id="auth-title">Sign in to search the archive</h2>
+        <p class="auth-copy" id="auth-copy">
           Sign in with your Bethel account to explore topics, watch specific sermon moments, and access your private study tools.
         </p>
 
@@ -1223,11 +1261,11 @@
         <section class="auth-screen active" id="login-screen">
           <div class="field-grid">
             <label class="field">
-              <span>Email</span>
+              <span id="login-email-label">Email</span>
               <input id="username-input" type="email" autocomplete="username" placeholder="you@abethel.org">
             </label>
             <label class="field">
-              <span>Password</span>
+              <span id="login-password-label">Password</span>
               <input id="password-input" type="password" autocomplete="current-password" placeholder="Enter your password">
             </label>
           </div>
@@ -1241,15 +1279,15 @@
         <section class="auth-screen" id="signup-screen">
           <div class="field-grid">
             <label class="field">
-              <span>Email</span>
+              <span id="signup-email-label">Email</span>
               <input id="signup-email" type="email" autocomplete="email" placeholder="name@abethel.org">
             </label>
             <label class="field">
-              <span>Password</span>
+              <span id="signup-password-label">Password</span>
               <input id="signup-pass" type="password" autocomplete="new-password" placeholder="8+ chars, 1 uppercase, 1 number">
             </label>
             <label class="field">
-              <span>Confirm Password</span>
+              <span id="signup-confirm-label">Confirm Password</span>
               <input id="signup-confirm" type="password" autocomplete="new-password" placeholder="Re-enter your password">
             </label>
           </div>
@@ -1258,13 +1296,13 @@
             <button class="btn-link" id="goto-login-btn" type="button">Back to login</button>
           </div>
           <div class="message-box error" id="signup-error"></div>
-          <div class="helper-text">Email verification is required before first access.</div>
+          <div class="helper-text" id="signup-helper">Email verification is required before first access.</div>
         </section>
 
         <section class="auth-screen" id="verify-screen">
           <div class="field-grid">
             <label class="field">
-              <span>Verification Code</span>
+              <span id="verify-code-label">Verification Code</span>
               <input id="verify-code" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="6-digit code">
             </label>
           </div>
@@ -1274,25 +1312,25 @@
           </div>
           <div class="message-box error" id="verify-error"></div>
           <div class="message-box success" id="verify-success"></div>
-          <div class="helper-text">Check the inbox for the email you just registered.</div>
+          <div class="helper-text" id="verify-helper">Check the inbox for the email you just registered.</div>
         </section>
 
         <section class="auth-screen" id="reset-screen">
           <div class="field-grid">
             <label class="field">
-              <span>Email</span>
+              <span id="reset-email-label">Email</span>
               <input id="reset-email" type="email" autocomplete="email" placeholder="you@abethel.org">
             </label>
             <label class="field">
-              <span>Reset Code</span>
+              <span id="reset-code-label">Reset Code</span>
               <input id="reset-code" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="6-digit code">
             </label>
             <label class="field">
-              <span>New Password</span>
+              <span id="reset-pass-label">New Password</span>
               <input id="reset-pass" type="password" autocomplete="new-password" placeholder="8+ chars, 1 uppercase, 1 number">
             </label>
             <label class="field">
-              <span>Confirm New Password</span>
+              <span id="reset-confirm-label">Confirm New Password</span>
               <input id="reset-confirm" type="password" autocomplete="new-password" placeholder="Re-enter your new password">
             </label>
           </div>
@@ -1303,7 +1341,7 @@
           </div>
           <div class="message-box error" id="reset-error"></div>
           <div class="message-box success" id="reset-success"></div>
-          <div class="helper-text">Request a code first, then enter the code and your new password.</div>
+          <div class="helper-text" id="reset-helper">Request a code first, then enter the code and your new password.</div>
         </section>
       </aside>
     </section>
@@ -1312,12 +1350,12 @@
       <header class="workspace-header">
         <div>
           <div class="workspace-meta">
-            <span class="meta-pill">Lead Pastor Focus</span>
-            <span class="meta-pill">Official archive workspace</span>
-            <span class="meta-pill">Source-linked answers</span>
+            <span class="meta-pill" id="meta-pill-focus">Lead Pastor Focus</span>
+            <span class="meta-pill" id="meta-pill-workspace">Official archive workspace</span>
+            <span class="meta-pill" id="meta-pill-sources">Source-linked answers</span>
           </div>
-          <h1>Lead Pastor Sermon Archive</h1>
-          <p class="workspace-copy">
+          <h1 id="workspace-title">Lead Pastor Sermon Archive</h1>
+          <p class="workspace-copy" id="workspace-copy">
             Search with a lead-pastor bias, review cited answers, and use the curated topic browser to jump into commonly requested themes.
           </p>
         </div>
@@ -1330,12 +1368,12 @@
       <section class="workspace-intro" aria-label="Popular archive starting points">
         <article class="featured-sermon">
           <div>
-            <div class="section-kicker">Featured Sermon</div>
+            <div class="section-kicker" id="featured-kicker">Featured Sermon</div>
             <h2>#2 “토후에서 토브로“</h2>
-            <p>Start here, then branch into related topic picks below.</p>
+            <p id="featured-copy">Start here, then branch into related topic picks below.</p>
           </div>
           <div class="feature-actions">
-            <a class="btn btn-primary" href="https://www.youtube.com/watch?v=Be-rKfz0qAQ" target="_blank" rel="noopener noreferrer">Watch Featured Sermon</a>
+            <a class="btn btn-primary" id="featured-btn" href="https://www.youtube.com/watch?v=Be-rKfz0qAQ" target="_blank" rel="noopener noreferrer">Watch Featured Sermon</a>
           </div>
         </article>
       </section>
@@ -1345,9 +1383,9 @@
           <section class="workspace-panel">
             <div class="query-panel-top">
               <div>
-                <div class="section-kicker">Ask the archive</div>
-                <h2 class="section-title">Search by topic, scripture, or question</h2>
-                <p class="workspace-copy">This build prioritizes sermons from 이혜진 담임목사 when sending your question to the archive.</p>
+                <div class="section-kicker" id="query-kicker">Ask the archive</div>
+                <h2 class="section-title" id="query-title">Search by topic, scripture, or question</h2>
+                <p class="workspace-copy" id="query-copy">This build prioritizes sermons from 이혜진 담임목사 when sending your question to the archive.</p>
               </div>
             </div>
 
@@ -1359,7 +1397,7 @@
               placeholder="Try: What has the lead pastor taught about prayer and surrender recently?"></textarea>
 
             <div class="query-actions">
-              <div class="helper-text">Press Enter to search. Use Shift + Enter for a new line.</div>
+              <div class="helper-text" id="query-helper">Press Enter to search. Use Shift + Enter for a new line.</div>
               <button class="btn btn-primary" id="search-btn" type="button">Search Sermons</button>
             </div>
 
@@ -1373,8 +1411,8 @@
           <section class="answer-panel">
             <div class="answer-head">
               <div>
-                <div class="section-kicker">Answer</div>
-                <h2 class="section-title">Archive response</h2>
+                <div class="section-kicker" id="answer-kicker">Answer</div>
+                <h2 class="section-title" id="answer-title">Archive response</h2>
                 <p class="answer-query" id="answer-query"><strong>Query:</strong> No query yet.</p>
               </div>
               <span class="answer-state" id="answer-state">Ready</span>
@@ -1388,9 +1426,9 @@
 
         <div class="workspace-column">
           <aside class="topic-panel">
-            <div class="section-kicker">Popular Topics</div>
-            <h2 class="section-title">Open sermon picks by question area</h2>
-            <p class="topic-description">
+            <div class="section-kicker" id="topic-kicker">Popular Topics</div>
+            <h2 class="section-title" id="topic-title">Open sermon picks by question area</h2>
+            <p class="topic-description" id="topic-description">
               These are curated lead-pastor picks. Choose a topic and open relevant sermon videos immediately.
             </p>
 
@@ -1409,8 +1447,8 @@
           <section class="sources-panel">
             <div class="panel-head">
               <div>
-                <div class="section-kicker">Sources</div>
-                <h2 class="section-title">Supporting sermon videos</h2>
+                <div class="section-kicker" id="sources-kicker">Sources</div>
+                <h2 class="section-title" id="sources-title">Supporting sermon videos</h2>
               </div>
             </div>
             <div class="sources-list" id="sources-list">
@@ -1423,13 +1461,13 @@
       <section class="catalog-panel panel">
         <div class="catalog-toolbar">
           <div>
-            <div class="section-kicker">Indexed Archive</div>
-            <h2 class="section-title">Browse ingested sermons</h2>
-            <p class="workspace-copy">This list reflects the actual indexed sermon archive behind search. Filter by title, topic, scripture, or pastor.</p>
+            <div class="section-kicker" id="catalog-kicker">Indexed Archive</div>
+            <h2 class="section-title" id="catalog-title">Browse ingested sermons</h2>
+            <p class="workspace-copy" id="catalog-copy">This list reflects the actual indexed sermon archive behind search. Filter by title, topic, scripture, or pastor.</p>
           </div>
           <div class="catalog-search">
             <label class="field">
-              <span>Filter Sermons</span>
+              <span id="catalog-filter-label">Filter Sermons</span>
               <input id="catalog-search" type="search" autocomplete="off" placeholder="Search title, topic, scripture, or pastor">
             </label>
           </div>
@@ -1451,14 +1489,14 @@
       <section class="history-panel">
         <div class="panel-head">
           <div>
-            <div class="section-kicker">Recent Questions</div>
-            <h2 class="section-title">Session history</h2>
+            <div class="section-kicker" id="history-kicker">Recent Questions</div>
+            <h2 class="section-title" id="history-title">Session history</h2>
           </div>
         </div>
         <div class="history-list" id="history-list">
           <p class="empty-state">Recent questions and answer snapshots will accumulate here during this session.</p>
         </div>
-        <p class="footer-note">Official archive workspace for Atlanta Bethel Church. This interface is intentionally narrower than the main website.</p>
+        <p class="footer-note" id="history-footer">Official archive workspace for Atlanta Bethel Church. This interface is intentionally narrower than the main website.</p>
       </section>
     </section>
   </div>
@@ -1469,6 +1507,294 @@
     const COGNITO = "https://cognito-idp.us-east-1.amazonaws.com/";
     const CLIENT_ID = "26eit6g1j6qmfk3jp0m8uat58i";
     const LEAD_PASTOR = "이혜진 담임목사";
+    const UI_TEXT = {
+      en: {
+        title: "Pulpit Archive | Atlanta Bethel Church",
+        status: {
+          preparing: "Preparing archive access",
+          awaitingSignIn: "Awaiting sign in",
+          creatingAccount: "Creating account",
+          passwordReset: "Password reset",
+          awaitingVerification: "Awaiting verification",
+          archiveReady: "Archive ready",
+          verifyingAccount: "Verifying account",
+          sendingCode: "Sending a new code",
+          sendingResetCode: "Sending reset code",
+          awaitingResetCode: "Awaiting reset code",
+          updatingPassword: "Updating password",
+          signingIn: "Signing in",
+          searchingArchive: "Searching archive",
+          sessionExpired: "Session expired",
+          connectionIssue: "Connection issue"
+        },
+        labels: {
+          heroTitle: "The Sermon Archive",
+          heroLead: "Has the pastor preached about a certain topic?",
+          heroText: "Search the topic. Find the video. Apply the word.",
+          archiveFocus: "Archive Focus",
+          archiveFocusTitle: "이혜진 담임목사",
+          archiveFocusCopy: "Built around the lead pastor archive first, with a tighter experience than the full public site.",
+          researchStyle: "Research Style",
+          researchStyleTitle: "Cited + watchable",
+          researchStyleCopy: "Search answers stay paired with sermon video links, not just generated text.",
+          commonUse: "Common Use",
+          commonUseTitle: "Topics in one click",
+          commonUseCopy: "Prayer, grace, church health, wisdom, and faith questions can jump straight to relevant videos.",
+          memberAccess: "Member Access",
+          authTitle: "Sign in to search the archive",
+          authCopy: "Sign in with your Bethel account to explore topics, watch specific sermon moments, and access your private study tools.",
+          email: "Email",
+          password: "Password",
+          verificationCode: "Verification Code",
+          resetCode: "Reset Code",
+          newPassword: "New Password",
+          confirmPassword: "Confirm Password",
+          confirmNewPassword: "Confirm New Password",
+          featuredSermon: "Featured Sermon",
+          featuredCopy: "Start here, then branch into related topic picks below.",
+          askArchive: "Ask the archive",
+          askArchiveTitle: "Search by topic, scripture, or question",
+          askArchiveCopy: "This build prioritizes sermons from 이혜진 담임목사 when sending your question to the archive.",
+          queryHelper: "Press Enter to search. Use Shift + Enter for a new line.",
+          answer: "Answer",
+          answerTitle: "Archive response",
+          queryLabel: "Query",
+          noQueryYet: "No query yet.",
+          popularTopics: "Popular Topics",
+          popularTopicsTitle: "Open sermon picks by question area",
+          popularTopicsCopy: "These are curated lead-pastor picks. Choose a topic and open relevant sermon videos immediately.",
+          sources: "Sources",
+          sourcesTitle: "Supporting sermon videos",
+          indexedArchive: "Indexed Archive",
+          indexedArchiveTitle: "Browse ingested sermons",
+          indexedArchiveCopy: "This list reflects the actual indexed sermon archive behind search. Filter by title, topic, scripture, or pastor.",
+          filterSermons: "Filter Sermons",
+          recentQuestions: "Recent Questions",
+          sessionHistory: "Session history",
+          sessionFooter: "Official archive workspace for Atlanta Bethel Church. This interface is intentionally narrower than the main website."
+        },
+        buttons: {
+          logIn: "Log In",
+          createAccount: "Create Account",
+          forgotPassword: "Forgot password?",
+          enterArchive: "Enter Archive",
+          backToLogin: "Back to login",
+          verifyAndEnter: "Verify and Enter",
+          resendCode: "Resend Code",
+          sendResetCode: "Send Reset Code",
+          setNewPassword: "Set New Password",
+          clearSession: "Clear Session",
+          logOut: "Log Out",
+          watchFeatured: "Watch Featured Sermon",
+          searchSermons: "Search Sermons",
+          watchSermon: "Watch Sermon",
+          watchVideo: "Watch Video",
+          loadMoreSermons: "Load More Sermons"
+        },
+        placeholders: {
+          email: "you@abethel.org",
+          signupEmail: "name@abethel.org",
+          currentPassword: "Enter your password",
+          passwordRule: "8+ chars, 1 uppercase, 1 number",
+          reenterPassword: "Re-enter your password",
+          code6: "6-digit code",
+          resetPasswordAgain: "Re-enter your new password",
+          question: "Try: What has the lead pastor taught about prayer and surrender recently?",
+          catalogFilter: "Search title, topic, scripture, or pastor"
+        },
+        helpers: {
+          signup: "Email verification is required before first access.",
+          verify: "Check the inbox for the email you just registered.",
+          reset: "Request a code first, then enter the code and your new password."
+        },
+        prompts: [
+          { label: "Prayer and surrender", value: "What has the lead pastor taught about prayer and surrender?" },
+          { label: "Wisdom in Proverbs", value: "What has the lead pastor said about wisdom in Proverbs?" },
+          { label: "Grace and obedience", value: "What has the lead pastor taught about grace and obedience?" }
+        ],
+        topicLabels: {
+          prayer: "Prayer",
+          wisdom: "Wisdom",
+          grace: "Grace",
+          church: "Church",
+          faith: "Faith",
+          culture: "Culture"
+        },
+        messages: {
+          passwordRequired: "Password is required.",
+          passwordsDoNotMatch: "Passwords do not match.",
+          passwordTooShort: "Password must be at least 8 characters.",
+          passwordNeedsRules: "Password must include at least one uppercase letter and one number.",
+          answerPlaceholder: "Your answer will appear here with a lead-pastor bias and the supporting sermon sources listed alongside it.",
+          answerNote: "Use the source cards to verify context before sharing or citing a response.",
+          answerReview: "Review the supporting sermon videos before forwarding a response to others.",
+          answerRequestFailed: "The request did not complete successfully.",
+          searching: "Searching",
+          runSearchForSources: "Run a search and the supporting sermon videos will be listed here.",
+          noSources: "No supporting sermon videos were returned for this answer.",
+          historyEmpty: "Recent questions and answer snapshots will accumulate here during this session.",
+          historySnapshot: "Answer snapshot",
+          topicSummaryEmpty: "Choose a topic to load recommended sermon videos.",
+          topicEmpty: "Topic selections will load here.",
+          catalogLoading: "Loading indexed sermons",
+          catalogLoadingBody: "Loading indexed sermons.",
+          catalogUnavailable: "Catalog unavailable",
+          catalogErrorPrefix: "Could not load the indexed archive:",
+          catalogNoMatches: "No indexed sermons matched that filter.",
+          indexedSermon: "Indexed Sermon",
+          metadataUnavailable: "Metadata unavailable",
+          transcriptReady: "Transcript indexed and ready for archive search.",
+          source: "Source",
+          sourceThumb: "thumbnail",
+          sermonThumb: "sermon",
+          sessionExpiredBody: "Your session expired. Please sign in again.",
+          noResponse: "No response received."
+        }
+      },
+      ko: {
+        title: "설교 아카이브 | 아틀란타 벧엘교회",
+        status: {
+          preparing: "아카이브 접속 준비 중",
+          awaitingSignIn: "로그인 대기",
+          creatingAccount: "계정 생성 중",
+          passwordReset: "비밀번호 재설정",
+          awaitingVerification: "이메일 인증 대기",
+          archiveReady: "아카이브 준비 완료",
+          verifyingAccount: "계정 인증 중",
+          sendingCode: "인증 코드 전송 중",
+          sendingResetCode: "재설정 코드 전송 중",
+          awaitingResetCode: "재설정 코드 입력 대기",
+          updatingPassword: "비밀번호 변경 중",
+          signingIn: "로그인 중",
+          searchingArchive: "아카이브 검색 중",
+          sessionExpired: "세션 만료",
+          connectionIssue: "연결 문제"
+        },
+        labels: {
+          heroTitle: "설교 아카이브",
+          heroLead: "목사님께서 그 주제를 설교하셨는지 찾고 싶으신가요?",
+          heroText: "주제를 검색하고, 영상을 찾고, 말씀을 적용하세요.",
+          archiveFocus: "아카이브 중심",
+          archiveFocusTitle: "이혜진 담임목사",
+          archiveFocusCopy: "공개 홈페이지보다 더 집중된 방식으로 담임목사 설교 아카이브를 우선 구성했습니다.",
+          researchStyle: "검색 방식",
+          researchStyleTitle: "근거 + 영상 확인",
+          researchStyleCopy: "검색 결과는 생성된 답변만이 아니라 설교 영상 링크와 함께 제공됩니다.",
+          commonUse: "자주 찾는 방식",
+          commonUseTitle: "한 번의 클릭으로 주제 찾기",
+          commonUseCopy: "기도, 은혜, 교회, 지혜, 믿음 같은 질문에서 바로 관련 영상으로 이동할 수 있습니다.",
+          memberAccess: "멤버 접속",
+          authTitle: "로그인하여 아카이브 검색",
+          authCopy: "벧엘 계정으로 로그인하여 주제를 탐색하고, 설교 특정 장면을 보고, 개인 학습 도구를 이용하세요.",
+          email: "이메일",
+          password: "비밀번호",
+          verificationCode: "인증 코드",
+          resetCode: "재설정 코드",
+          newPassword: "새 비밀번호",
+          confirmPassword: "비밀번호 확인",
+          confirmNewPassword: "새 비밀번호 확인",
+          featuredSermon: "추천 설교",
+          featuredCopy: "여기서 시작한 뒤 아래 관련 주제로 확장해 보세요.",
+          askArchive: "아카이브에 묻기",
+          askArchiveTitle: "주제, 성경구절, 질문으로 검색",
+          askArchiveCopy: "이 빌드는 질문을 보낼 때 이혜진 담임목사 설교를 우선적으로 반영합니다.",
+          queryHelper: "Enter로 검색하고, Shift + Enter로 줄바꿈합니다.",
+          answer: "응답",
+          answerTitle: "아카이브 응답",
+          queryLabel: "질문",
+          noQueryYet: "아직 질문이 없습니다.",
+          popularTopics: "인기 주제",
+          popularTopicsTitle: "질문 영역별 설교 바로가기",
+          popularTopicsCopy: "담임목사 설교 중 자주 찾는 주제를 모았습니다. 주제를 선택하면 관련 영상을 바로 열 수 있습니다.",
+          sources: "출처",
+          sourcesTitle: "연관 설교 영상",
+          indexedArchive: "색인된 아카이브",
+          indexedArchiveTitle: "수집된 설교 둘러보기",
+          indexedArchiveCopy: "이 목록은 실제 검색에 사용되는 설교 아카이브입니다. 제목, 주제, 성경구절, 목회자 기준으로 필터링할 수 있습니다.",
+          filterSermons: "설교 필터",
+          recentQuestions: "최근 질문",
+          sessionHistory: "세션 기록",
+          sessionFooter: "아틀란타 벧엘교회를 위한 공식 아카이브 작업 공간입니다. 이 인터페이스는 메인 홈페이지보다 더 집중된 용도로 설계되었습니다."
+        },
+        buttons: {
+          logIn: "로그인",
+          createAccount: "계정 만들기",
+          forgotPassword: "비밀번호를 잊으셨나요?",
+          enterArchive: "아카이브 입장",
+          backToLogin: "로그인으로 돌아가기",
+          verifyAndEnter: "인증 후 입장",
+          resendCode: "코드 다시 보내기",
+          sendResetCode: "재설정 코드 보내기",
+          setNewPassword: "새 비밀번호 설정",
+          clearSession: "세션 초기화",
+          logOut: "로그아웃",
+          watchFeatured: "추천 설교 보기",
+          searchSermons: "설교 검색",
+          watchSermon: "설교 보기",
+          watchVideo: "영상 보기",
+          loadMoreSermons: "설교 더 보기"
+        },
+        placeholders: {
+          email: "you@abethel.org",
+          signupEmail: "name@abethel.org",
+          currentPassword: "비밀번호를 입력하세요",
+          passwordRule: "8자 이상, 대문자 1개, 숫자 1개",
+          reenterPassword: "비밀번호를 다시 입력하세요",
+          code6: "6자리 코드",
+          resetPasswordAgain: "새 비밀번호를 다시 입력하세요",
+          question: "예: 최근에 담임목사님께서 기도와 순복에 대해 어떻게 설교하셨나요?",
+          catalogFilter: "제목, 주제, 성경구절, 목회자로 검색"
+        },
+        helpers: {
+          signup: "처음 이용 전 이메일 인증이 필요합니다.",
+          verify: "방금 등록한 이메일의 받은편지함을 확인하세요.",
+          reset: "먼저 코드를 요청한 뒤, 코드와 새 비밀번호를 입력하세요."
+        },
+        prompts: [
+          { label: "기도와 순복", value: "담임목사님께서 기도와 순복에 대해 어떻게 설교하셨나요?" },
+          { label: "잠언의 지혜", value: "담임목사님께서 잠언의 지혜에 대해 무엇이라고 설교하셨나요?" },
+          { label: "은혜와 순종", value: "담임목사님께서 은혜와 순종에 대해 어떻게 가르치셨나요?" }
+        ],
+        topicLabels: {
+          prayer: "기도",
+          wisdom: "지혜",
+          grace: "은혜",
+          church: "교회",
+          faith: "믿음",
+          culture: "문화"
+        },
+        messages: {
+          passwordRequired: "비밀번호가 필요합니다.",
+          passwordsDoNotMatch: "비밀번호가 일치하지 않습니다.",
+          passwordTooShort: "비밀번호는 8자 이상이어야 합니다.",
+          passwordNeedsRules: "비밀번호에는 대문자 1개와 숫자 1개가 포함되어야 합니다.",
+          answerPlaceholder: "담임목사 우선 기준으로 생성된 답변과 함께 관련 설교 출처가 여기에 표시됩니다.",
+          answerNote: "응답을 공유하거나 인용하기 전에 출처 카드를 확인하세요.",
+          answerReview: "다른 사람에게 전달하기 전에 관련 설교 영상을 다시 확인하세요.",
+          answerRequestFailed: "요청이 정상적으로 완료되지 않았습니다.",
+          searching: "검색 중",
+          runSearchForSources: "검색을 실행하면 관련 설교 영상이 여기에 표시됩니다.",
+          noSources: "이 답변에 대해 반환된 관련 설교 영상이 없습니다.",
+          historyEmpty: "이 세션에서의 최근 질문과 답변 요약이 여기에 쌓입니다.",
+          historySnapshot: "답변 요약",
+          topicSummaryEmpty: "주제를 선택하면 추천 설교 영상을 불러옵니다.",
+          topicEmpty: "주제별 설교 선택 항목이 여기에 표시됩니다.",
+          catalogLoading: "색인된 설교를 불러오는 중",
+          catalogLoadingBody: "색인된 설교를 불러오는 중입니다.",
+          catalogUnavailable: "카탈로그를 불러올 수 없습니다",
+          catalogErrorPrefix: "색인된 아카이브를 불러오지 못했습니다:",
+          catalogNoMatches: "조건에 맞는 색인 설교가 없습니다.",
+          indexedSermon: "색인 설교",
+          metadataUnavailable: "메타데이터 없음",
+          transcriptReady: "전사본이 색인되어 검색 준비가 완료되었습니다.",
+          source: "출처",
+          sourceThumb: "썸네일",
+          sermonThumb: "설교",
+          sessionExpiredBody: "세션이 만료되었습니다. 다시 로그인하세요.",
+          noResponse: "응답이 없습니다."
+        }
+      }
+    };
 
     const CURATED_TOPICS = {
       prayer: {
@@ -1628,17 +1954,30 @@
     let filteredCatalogEntries = [];
     let catalogVisibleCount = 12;
     let catalogLoaded = false;
+    let currentLanguage = localStorage.getItem("pulpit_language") === "ko" ? "ko" : "en";
+    let currentStatusKey = "preparing";
+    let currentStatusLoading = false;
 
     const $ = (id) => document.getElementById(id);
 
-    function setStatus(message, loading = false) {
-      $("status-text").textContent = message;
+    function text(path) {
+      return path.split(".").reduce((acc, part) => acc && acc[part], UI_TEXT[currentLanguage]) || path;
+    }
+
+    function topicLabel(key) {
+      return text(`topicLabels.${key}`);
+    }
+
+    function setStatus(messageKey, loading = false) {
+      currentStatusKey = messageKey;
+      currentStatusLoading = loading;
+      $("status-text").textContent = text(`status.${messageKey}`) !== `status.${messageKey}` ? text(`status.${messageKey}`) : messageKey;
       $("status-card").classList.toggle("loading", loading);
     }
 
     function setAnswerQuery(question) {
-      const value = question ? escapeHtml(question) : "No query yet.";
-      $("answer-query").innerHTML = `<strong>Query:</strong> ${value}`;
+      const value = question ? escapeHtml(question) : text("labels.noQueryYet");
+      $("answer-query").innerHTML = `<strong>${escapeHtml(text("labels.queryLabel"))}:</strong> ${value}`;
     }
 
     function showMessage(id, message) {
@@ -1655,6 +1994,114 @@
 
     function clearMessages() {
       ["login-error", "signup-error", "verify-error", "verify-success", "reset-error", "reset-success"].forEach(hideMessage);
+    }
+
+    function applyLanguage() {
+      document.documentElement.lang = currentLanguage;
+      document.title = text("title");
+
+      $("lang-en-btn").classList.toggle("active", currentLanguage === "en");
+      $("lang-ko-btn").classList.toggle("active", currentLanguage === "ko");
+
+      $("hero-title").textContent = text("labels.heroTitle");
+      $("hero-copy-strong").textContent = text("labels.heroLead");
+      $("hero-copy-text").textContent = text("labels.heroText");
+      $("hero-focus-kicker").textContent = text("labels.archiveFocus");
+      $("hero-focus-title").textContent = text("labels.archiveFocusTitle");
+      $("hero-focus-copy").textContent = text("labels.archiveFocusCopy");
+      $("hero-style-kicker").textContent = text("labels.researchStyle");
+      $("hero-style-title").textContent = text("labels.researchStyleTitle");
+      $("hero-style-copy").textContent = text("labels.researchStyleCopy");
+      $("hero-use-kicker").textContent = text("labels.commonUse");
+      $("hero-use-title").textContent = text("labels.commonUseTitle");
+      $("hero-use-copy").textContent = text("labels.commonUseCopy");
+      $("auth-kicker").textContent = text("labels.memberAccess");
+      $("auth-title").textContent = text("labels.authTitle");
+      $("auth-copy").textContent = text("labels.authCopy");
+      $("login-email-label").textContent = text("labels.email");
+      $("login-password-label").textContent = text("labels.password");
+      $("signup-email-label").textContent = text("labels.email");
+      $("signup-password-label").textContent = text("labels.password");
+      $("signup-confirm-label").textContent = text("labels.confirmPassword");
+      $("verify-code-label").textContent = text("labels.verificationCode");
+      $("reset-email-label").textContent = text("labels.email");
+      $("reset-code-label").textContent = text("labels.resetCode");
+      $("reset-pass-label").textContent = text("labels.newPassword");
+      $("reset-confirm-label").textContent = text("labels.confirmNewPassword");
+      $("signup-helper").textContent = text("helpers.signup");
+      $("verify-helper").textContent = text("helpers.verify");
+      $("reset-helper").textContent = text("helpers.reset");
+      $("featured-kicker").textContent = text("labels.featuredSermon");
+      $("featured-copy").textContent = text("labels.featuredCopy");
+      $("featured-btn").textContent = text("buttons.watchFeatured");
+      $("query-kicker").textContent = text("labels.askArchive");
+      $("query-title").textContent = text("labels.askArchiveTitle");
+      $("query-copy").textContent = text("labels.askArchiveCopy");
+      $("query-helper").textContent = text("labels.queryHelper");
+      $("answer-kicker").textContent = text("labels.answer");
+      $("answer-title").textContent = text("labels.answerTitle");
+      $("topic-kicker").textContent = text("labels.popularTopics");
+      $("topic-title").textContent = text("labels.popularTopicsTitle");
+      $("topic-description").textContent = text("labels.popularTopicsCopy");
+      $("sources-kicker").textContent = text("labels.sources");
+      $("sources-title").textContent = text("labels.sourcesTitle");
+      $("catalog-kicker").textContent = text("labels.indexedArchive");
+      $("catalog-title").textContent = text("labels.indexedArchiveTitle");
+      $("catalog-copy").textContent = text("labels.indexedArchiveCopy");
+      $("catalog-filter-label").textContent = text("labels.filterSermons");
+      $("history-kicker").textContent = text("labels.recentQuestions");
+      $("history-title").textContent = text("labels.sessionHistory");
+      $("history-footer").textContent = text("labels.sessionFooter");
+
+      $("tab-login").textContent = text("buttons.logIn");
+      $("tab-signup").textContent = text("buttons.createAccount");
+      $("goto-reset-btn").textContent = text("buttons.forgotPassword");
+      $("login-btn").textContent = text("buttons.enterArchive");
+      $("signup-btn").textContent = text("buttons.createAccount");
+      $("goto-login-btn").textContent = text("buttons.backToLogin");
+      $("verify-btn").textContent = text("buttons.verifyAndEnter");
+      $("resend-btn").textContent = text("buttons.resendCode");
+      $("request-reset-btn").textContent = text("buttons.sendResetCode");
+      $("confirm-reset-btn").textContent = text("buttons.setNewPassword");
+      $("reset-back-login-btn").textContent = text("buttons.backToLogin");
+      $("search-btn").textContent = text("buttons.searchSermons");
+      $("clear-btn").textContent = text("buttons.clearSession");
+      $("logout-btn").textContent = text("buttons.logOut");
+      $("catalog-more-btn").textContent = text("buttons.loadMoreSermons");
+
+      $("username-input").placeholder = text("placeholders.email");
+      $("signup-email").placeholder = text("placeholders.signupEmail");
+      $("password-input").placeholder = text("placeholders.currentPassword");
+      $("signup-pass").placeholder = text("placeholders.passwordRule");
+      $("signup-confirm").placeholder = text("placeholders.reenterPassword");
+      $("verify-code").placeholder = text("placeholders.code6");
+      $("reset-email").placeholder = text("placeholders.email");
+      $("reset-code").placeholder = text("placeholders.code6");
+      $("reset-pass").placeholder = text("placeholders.passwordRule");
+      $("reset-confirm").placeholder = text("placeholders.resetPasswordAgain");
+      $("question-input").placeholder = text("placeholders.question");
+      $("catalog-search").placeholder = text("placeholders.catalogFilter");
+
+      document.querySelectorAll(".prompt-chip").forEach((chip, index) => {
+        const prompt = UI_TEXT[currentLanguage].prompts[index];
+        if (!prompt) return;
+        chip.textContent = prompt.label;
+        chip.dataset.prompt = prompt.value;
+      });
+
+      setAnswerQuery(lastQuestion);
+      setStatus(currentStatusKey, currentStatusLoading);
+      renderTopicTabs();
+      renderTopicCards(activeTopic);
+      if (catalogLoaded) {
+        renderCatalog();
+      }
+    }
+
+    function setLanguage(language) {
+      currentLanguage = language === "ko" ? "ko" : "en";
+      localStorage.setItem("pulpit_language", currentLanguage);
+      applyLanguage();
     }
 
     function setHttpBanner() {
@@ -1674,39 +2121,39 @@
       $("tab-signup").classList.toggle("active", screenId === "signup-screen");
 
       if (screenId === "login-screen") {
-        setStatus("Awaiting sign in");
+        setStatus("awaitingSignIn");
         $("username-input").focus();
       } else if (screenId === "signup-screen") {
-        setStatus("Creating account");
+        setStatus("creatingAccount");
         $("signup-email").focus();
       } else if (screenId === "reset-screen") {
-        setStatus("Password reset");
+        setStatus("passwordReset");
         $("reset-email").value = $("username-input").value.trim();
         $("reset-email").focus();
       } else {
-        setStatus("Awaiting verification");
+        setStatus("awaitingVerification");
         $("verify-code").focus();
       }
     }
 
     function validatePassword(password, confirm, errorId) {
       if (!password) {
-        showMessage(errorId, "Password is required.");
+        showMessage(errorId, text("messages.passwordRequired"));
         return false;
       }
 
       if (password !== confirm) {
-        showMessage(errorId, "Passwords do not match.");
+        showMessage(errorId, text("messages.passwordsDoNotMatch"));
         return false;
       }
 
       if (password.length < 8) {
-        showMessage(errorId, "Password must be at least 8 characters.");
+        showMessage(errorId, text("messages.passwordTooShort"));
         return false;
       }
 
       if (!/[A-Z]/.test(password) || !/[0-9]/.test(password)) {
-        showMessage(errorId, "Password must include at least one uppercase letter and one number.");
+        showMessage(errorId, text("messages.passwordNeedsRules"));
         return false;
       }
 
@@ -1716,7 +2163,7 @@
     function showWorkspace() {
       $("landing-shell").classList.add("hidden");
       $("workspace-shell").classList.add("active");
-      setStatus("Archive ready");
+      setStatus("archiveReady");
       $("question-input").focus();
       renderTopicTabs();
       renderTopicCards(activeTopic);
@@ -1780,10 +2227,12 @@
       const count = $("catalog-count");
       const moreButton = $("catalog-more-btn");
 
-      count.textContent = `${filteredCatalogEntries.length} indexed sermon${filteredCatalogEntries.length === 1 ? "" : "s"}`;
+      count.textContent = currentLanguage === "ko"
+        ? `색인된 설교 ${filteredCatalogEntries.length}개`
+        : `${filteredCatalogEntries.length} indexed sermon${filteredCatalogEntries.length === 1 ? "" : "s"}`;
 
       if (!filteredCatalogEntries.length) {
-        list.innerHTML = '<p class="empty-state">No indexed sermons matched that filter.</p>';
+        list.innerHTML = `<p class="empty-state">${escapeHtml(text("messages.catalogNoMatches"))}</p>`;
         moreButton.classList.add("hidden");
         return;
       }
@@ -1802,10 +2251,10 @@
               ${thumb ? `<img src="${thumb}" alt="${escapeHtml(entry.title || "sermon")} thumbnail">` : ""}
             </a>
             <div class="catalog-content">
-              <span class="source-meta">Indexed Sermon</span>
+              <span class="source-meta">${escapeHtml(text("messages.indexedSermon"))}</span>
               <h3>${escapeHtml(entry.title || "Untitled sermon")}</h3>
-              <p class="catalog-meta-line">${escapeHtml(formatCatalogMeta(entry) || "Metadata unavailable")}</p>
-              <p class="catalog-note">${escapeHtml(entry.description || "Transcript indexed and ready for archive search.")}</p>
+              <p class="catalog-meta-line">${escapeHtml(formatCatalogMeta(entry) || text("messages.metadataUnavailable"))}</p>
+              <p class="catalog-note">${escapeHtml(entry.description || text("messages.transcriptReady"))}</p>
               <div class="catalog-tags">
                 ${(entry.scripture_references || []).slice(0, 2).map((ref) => `<span class="catalog-tag">${escapeHtml(ref)}</span>`).join("")}
                 ${(entry.topics || []).slice(0, 2).map((topic) => `<span class="catalog-tag">${escapeHtml(topic)}</span>`).join("")}
@@ -1813,7 +2262,7 @@
             </div>
           </div>
           <div class="feature-actions">
-            <a class="btn btn-secondary" href="${escapeAttribute(entry.youtube_url || "#")}" target="_blank" rel="noopener noreferrer">Watch Sermon</a>
+            <a class="btn btn-secondary" href="${escapeAttribute(entry.youtube_url || "#")}" target="_blank" rel="noopener noreferrer">${escapeHtml(text("buttons.watchSermon"))}</a>
           </div>
         `;
         list.appendChild(card);
@@ -1834,8 +2283,8 @@
     async function loadCatalog() {
       const list = $("catalog-list");
       const count = $("catalog-count");
-      list.innerHTML = '<p class="empty-state">Loading indexed sermons.</p>';
-      count.textContent = "Loading indexed sermons";
+      list.innerHTML = `<p class="empty-state">${escapeHtml(text("messages.catalogLoadingBody"))}</p>`;
+      count.textContent = text("messages.catalogLoading");
 
       try {
         const response = await fetch(CATALOG_URL, {
@@ -1857,8 +2306,8 @@
         catalogLoaded = true;
         applyCatalogFilter();
       } catch (error) {
-        list.innerHTML = `<p class="empty-state">Could not load the indexed archive: ${escapeHtml(error.message)}</p>`;
-        count.textContent = "Catalog unavailable";
+        list.innerHTML = `<p class="empty-state">${escapeHtml(text("messages.catalogErrorPrefix"))} ${escapeHtml(error.message)}</p>`;
+        count.textContent = text("messages.catalogUnavailable");
       }
     }
 
@@ -1875,7 +2324,7 @@
           const button = document.createElement("button");
           button.className = `topic-tab${key === activeTopic ? " active" : ""}`;
           button.type = "button";
-          button.textContent = topic.label;
+          button.textContent = topicLabel(key);
           button.addEventListener("click", () => {
             activeTopic = key;
             renderTopicTabs();
@@ -1891,7 +2340,7 @@
       const container = $("topic-card-list");
 
       $("topic-summary").innerHTML = `
-        <strong>${topic.label}</strong>
+        <strong>${topicLabel(topicKey)}</strong>
         <p>${topic.summary}</p>
       `;
 
@@ -1906,14 +2355,14 @@
               <img src="${youtubeThumb(sermon.videoId)}" alt="${escapeHtml(sermon.title)} thumbnail">
             </a>
             <div class="media-content">
-              <span class="topic-badge">${escapeHtml(topic.label)}</span>
+              <span class="topic-badge">${escapeHtml(topicLabel(topicKey))}</span>
               <h3>${escapeHtml(sermon.title)}</h3>
               <p>${escapeHtml(sermon.detail)}</p>
               <p style="margin-top:8px;">${escapeHtml(sermon.note)}</p>
             </div>
           </div>
           <div class="feature-actions">
-            <a class="btn btn-secondary" href="${youtubeUrl(sermon.videoId)}" target="_blank" rel="noopener noreferrer">Watch Sermon</a>
+            <a class="btn btn-secondary" href="${youtubeUrl(sermon.videoId)}" target="_blank" rel="noopener noreferrer">${escapeHtml(text("buttons.watchSermon"))}</a>
           </div>
         `;
         container.appendChild(card);
@@ -1944,7 +2393,7 @@
       item.className = "history-item";
       item.innerHTML = `
         <strong>${escapeHtml(question)}</strong>
-        <span>Answer snapshot</span>
+        <span>${escapeHtml(text("messages.historySnapshot"))}</span>
         <p>${escapeHtml(answer)}</p>
       `;
       list.prepend(item);
@@ -1955,7 +2404,7 @@
       list.innerHTML = "";
 
       if (!sources.length) {
-        list.innerHTML = '<p class="empty-state">No supporting sermon videos were returned for this answer.</p>';
+        list.innerHTML = `<p class="empty-state">${escapeHtml(text("messages.noSources"))}</p>`;
         return;
       }
 
@@ -1971,13 +2420,13 @@
               ${thumb ? `<img src="${thumb}" alt="${escapeHtml(source.title || `Source ${index + 1}`)} thumbnail">` : ""}
             </a>
             <div class="source-content">
-              <span class="source-meta">Source ${index + 1}</span>
+              <span class="source-meta">${escapeHtml(text("messages.source"))} ${index + 1}</span>
               <h3>${escapeHtml(source.title || "Untitled sermon")}</h3>
               <p>${escapeHtml(source.date || "Date unavailable")}</p>
             </div>
           </div>
           <div class="feature-actions">
-            <a class="btn btn-secondary" href="${escapeAttribute(source.youtube_url || "#")}" target="_blank" rel="noopener noreferrer">Watch Video</a>
+            <a class="btn btn-secondary" href="${escapeAttribute(source.youtube_url || "#")}" target="_blank" rel="noopener noreferrer">${escapeHtml(text("buttons.watchVideo"))}</a>
           </div>
         `;
 
@@ -1989,12 +2438,15 @@
       clearSearchLoading();
       const answer = $("response-text");
       answer.className = "answer-body loading";
-      answer.innerHTML = '<span class="searching-spinner" aria-hidden="true"></span><span class="searching-label">Searching</span>';
-      $("answer-state").textContent = "Searching";
-      $("response-note").textContent = "The archive is retrieving relevant sermons and assembling a source-linked answer.";
+      answer.innerHTML = `<span class="searching-spinner" aria-hidden="true"></span><span class="searching-label">${escapeHtml(text("messages.searching"))}</span>`;
+      $("answer-state").textContent = text("messages.searching");
+      $("response-note").textContent = currentLanguage === "ko"
+        ? "아카이브가 관련 설교를 찾고 출처 기반 응답을 구성하고 있습니다."
+        : "The archive is retrieving relevant sermons and assembling a source-linked answer.";
 
       const label = answer.querySelector(".searching-label");
-      const phases = ["Searching", "Searching.", "Searching..", "Searching..."];
+      const base = text("messages.searching");
+      const phases = [base, `${base}.`, `${base}..`, `${base}...`];
       let phaseIndex = 0;
       searchLoadingTimer = window.setInterval(() => {
         phaseIndex = (phaseIndex + 1) % phases.length;
@@ -2012,24 +2464,26 @@
       if (!text) {
         answer.classList.add("empty-state");
       }
-      $("answer-state").textContent = isError ? "Issue" : "Complete";
+      $("answer-state").textContent = isError
+        ? (currentLanguage === "ko" ? "오류" : "Issue")
+        : (currentLanguage === "ko" ? "완료" : "Complete");
       $("response-note").textContent = isError
-        ? "The request did not complete successfully."
-        : "Review the supporting sermon videos before forwarding a response to others.";
+        ? text("messages.answerRequestFailed")
+        : text("messages.answerReview");
     }
 
     function clearWorkspace() {
       clearSearchLoading();
       $("response-text").className = "answer-body empty-state";
-      $("response-text").textContent = "Your answer will appear here with a lead-pastor bias and the supporting sermon sources listed alongside it.";
-      $("answer-state").textContent = "Ready";
+      $("response-text").textContent = text("messages.answerPlaceholder");
+      $("answer-state").textContent = currentLanguage === "ko" ? "준비" : "Ready";
       setAnswerQuery("");
-      $("response-note").textContent = "Use the source cards to verify context before sharing or citing a response.";
-      $("sources-list").innerHTML = '<p class="empty-state">Run a search and the supporting sermon videos will be listed here.</p>';
-      $("history-list").innerHTML = '<p class="empty-state">Recent questions and answer snapshots will accumulate here during this session.</p>';
+      $("response-note").textContent = text("messages.answerNote");
+      $("sources-list").innerHTML = `<p class="empty-state">${escapeHtml(text("messages.runSearchForSources"))}</p>`;
+      $("history-list").innerHTML = `<p class="empty-state">${escapeHtml(text("messages.historyEmpty"))}</p>`;
       $("question-input").value = "";
       lastQuestion = "";
-      setStatus("Archive ready");
+      setStatus("archiveReady");
     }
 
     function clearSearchLoading() {
@@ -2054,7 +2508,7 @@
       const confirm = $("signup-confirm").value;
 
       if (!email || !pass) {
-        showMessage("signup-error", "Email and password are required.");
+        showMessage("signup-error", currentLanguage === "ko" ? "이메일과 비밀번호가 필요합니다." : "Email and password are required.");
         return;
       }
 
@@ -2062,7 +2516,7 @@
         return;
       }
 
-      setStatus("Creating account", true);
+      setStatus("creatingAccount", true);
 
       try {
         const data = await cognitoRequest("AWSCognitoIdentityProviderService.SignUp", {
@@ -2079,12 +2533,12 @@
 
         if (data.__type) {
           const message = {
-            UsernameExistsException: "An account with this email already exists.",
-            InvalidPasswordException: "Password does not meet the required rules.",
-            InvalidParameterException: "Enter a valid email address."
+            UsernameExistsException: currentLanguage === "ko" ? "이 이메일로 된 계정이 이미 존재합니다." : "An account with this email already exists.",
+            InvalidPasswordException: currentLanguage === "ko" ? "비밀번호가 규칙을 충족하지 않습니다." : "Password does not meet the required rules.",
+            InvalidParameterException: currentLanguage === "ko" ? "유효한 이메일 주소를 입력하세요." : "Enter a valid email address."
           }[data.__type] || data.message || data.__type;
           showMessage("signup-error", message);
-          setStatus("Creating account");
+          setStatus("creatingAccount");
           return;
         }
 
@@ -2092,8 +2546,8 @@
         pendingPass = pass;
         showAuthScreen("verify-screen");
       } catch (error) {
-        showMessage("signup-error", `Network error: ${error.message}`);
-        setStatus("Connection issue");
+        showMessage("signup-error", `${currentLanguage === "ko" ? "네트워크 오류" : "Network error"}: ${error.message}`);
+        setStatus("connectionIssue");
       }
     }
 
@@ -2102,11 +2556,11 @@
       const code = $("verify-code").value.trim();
 
       if (!code) {
-        showMessage("verify-error", "Enter the 6-digit verification code.");
+        showMessage("verify-error", currentLanguage === "ko" ? "6자리 인증 코드를 입력하세요." : "Enter the 6-digit verification code.");
         return;
       }
 
-      setStatus("Verifying account", true);
+      setStatus("verifyingAccount", true);
 
       try {
         const data = await cognitoRequest("AWSCognitoIdentityProviderService.ConfirmSignUp", {
@@ -2117,39 +2571,39 @@
 
         if (data.__type) {
           const message = {
-            CodeMismatchException: "That verification code does not match.",
-            ExpiredCodeException: "That code expired. Request a new one below.",
-            NotAuthorizedException: "This account is already confirmed."
+            CodeMismatchException: currentLanguage === "ko" ? "인증 코드가 일치하지 않습니다." : "That verification code does not match.",
+            ExpiredCodeException: currentLanguage === "ko" ? "코드가 만료되었습니다. 새 코드를 요청하세요." : "That code expired. Request a new one below.",
+            NotAuthorizedException: currentLanguage === "ko" ? "이 계정은 이미 인증되었습니다." : "This account is already confirmed."
           }[data.__type] || data.message || data.__type;
           showMessage("verify-error", message);
-          setStatus("Awaiting verification");
+          setStatus("awaitingVerification");
           return;
         }
 
-        showMessage("verify-success", "Account confirmed. Signing you in now.");
+        showMessage("verify-success", currentLanguage === "ko" ? "계정 인증이 완료되었습니다. 지금 로그인합니다." : "Account confirmed. Signing you in now.");
         $("username-input").value = pendingEmail;
         $("password-input").value = pendingPass;
         await doLogin();
       } catch (error) {
-        showMessage("verify-error", `Network error: ${error.message}`);
-        setStatus("Connection issue");
+        showMessage("verify-error", `${currentLanguage === "ko" ? "네트워크 오류" : "Network error"}: ${error.message}`);
+        setStatus("connectionIssue");
       }
     }
 
     async function doResend() {
       clearMessages();
-      setStatus("Sending a new code", true);
+      setStatus("sendingCode", true);
 
       try {
         await cognitoRequest("AWSCognitoIdentityProviderService.ResendConfirmationCode", {
           ClientId: CLIENT_ID,
           Username: pendingEmail
         });
-        showMessage("verify-success", "A new verification code has been sent.");
-        setStatus("Awaiting verification");
+        showMessage("verify-success", currentLanguage === "ko" ? "새 인증 코드가 전송되었습니다." : "A new verification code has been sent.");
+        setStatus("awaitingVerification");
       } catch (error) {
-        showMessage("verify-error", `Network error: ${error.message}`);
-        setStatus("Connection issue");
+        showMessage("verify-error", `${currentLanguage === "ko" ? "네트워크 오류" : "Network error"}: ${error.message}`);
+        setStatus("connectionIssue");
       }
     }
 
@@ -2158,12 +2612,12 @@
 
       const email = $("reset-email").value.trim();
       if (!email) {
-        showMessage("reset-error", "Email is required.");
+        showMessage("reset-error", currentLanguage === "ko" ? "이메일이 필요합니다." : "Email is required.");
         return;
       }
 
       resetEmail = email;
-      setStatus("Sending reset code", true);
+      setStatus("sendingResetCode", true);
 
       try {
         const data = await cognitoRequest("AWSCognitoIdentityProviderService.ForgotPassword", {
@@ -2181,28 +2635,28 @@
             if (!resend.__type) {
               pendingEmail = email;
               showAuthScreen("verify-screen");
-              showMessage("verify-success", "No verified account matched that email yet. If this account exists, verify it first. A verification code has been sent to your email.");
-              setStatus("Awaiting verification");
+              showMessage("verify-success", currentLanguage === "ko" ? "아직 인증된 계정이 아닙니다. 계정이 존재하면 먼저 인증해 주세요. 이메일로 인증 코드를 보냈습니다." : "No verified account matched that email yet. If this account exists, verify it first. A verification code has been sent to your email.");
+              setStatus("awaitingVerification");
               return;
             }
           }
 
           const message = {
-            UserNotFoundException: "No account matched that email.",
-            InvalidParameterException: "No verified account matched that email. Verify the account first or create one.",
-            LimitExceededException: "Too many attempts. Wait a moment and try again."
+            UserNotFoundException: currentLanguage === "ko" ? "해당 이메일과 일치하는 계정이 없습니다." : "No account matched that email.",
+            InvalidParameterException: currentLanguage === "ko" ? "인증된 계정이 없습니다. 먼저 인증하거나 계정을 만드세요." : "No verified account matched that email. Verify the account first or create one.",
+            LimitExceededException: currentLanguage === "ko" ? "시도가 너무 많습니다. 잠시 후 다시 시도하세요." : "Too many attempts. Wait a moment and try again."
           }[data.__type] || data.message || data.__type;
           showMessage("reset-error", message);
-          setStatus("Password reset");
+          setStatus("passwordReset");
           return;
         }
 
-        showMessage("reset-success", "A reset code has been sent. Enter the code and choose a new password.");
-        setStatus("Awaiting reset code");
+        showMessage("reset-success", currentLanguage === "ko" ? "재설정 코드가 전송되었습니다. 코드를 입력하고 새 비밀번호를 설정하세요." : "A reset code has been sent. Enter the code and choose a new password.");
+        setStatus("awaitingResetCode");
         $("reset-code").focus();
       } catch (error) {
-        showMessage("reset-error", `Network error: ${error.message}`);
-        setStatus("Connection issue");
+        showMessage("reset-error", `${currentLanguage === "ko" ? "네트워크 오류" : "Network error"}: ${error.message}`);
+        setStatus("connectionIssue");
       }
     }
 
@@ -2215,7 +2669,7 @@
       const confirm = $("reset-confirm").value;
 
       if (!email || !code) {
-        showMessage("reset-error", "Email and reset code are required.");
+        showMessage("reset-error", currentLanguage === "ko" ? "이메일과 재설정 코드가 필요합니다." : "Email and reset code are required.");
         return;
       }
 
@@ -2223,7 +2677,7 @@
         return;
       }
 
-      setStatus("Updating password", true);
+      setStatus("updatingPassword", true);
 
       try {
         const data = await cognitoRequest("AWSCognitoIdentityProviderService.ConfirmForgotPassword", {
@@ -2235,28 +2689,28 @@
 
         if (data.__type) {
           const message = {
-            CodeMismatchException: "That reset code does not match.",
-            ExpiredCodeException: "That reset code expired. Request a new one.",
-            UserNotFoundException: "No account matched that email.",
-            InvalidPasswordException: "Password does not meet the required rules."
+            CodeMismatchException: currentLanguage === "ko" ? "재설정 코드가 일치하지 않습니다." : "That reset code does not match.",
+            ExpiredCodeException: currentLanguage === "ko" ? "재설정 코드가 만료되었습니다. 새 코드를 요청하세요." : "That reset code expired. Request a new one.",
+            UserNotFoundException: currentLanguage === "ko" ? "해당 이메일과 일치하는 계정이 없습니다." : "No account matched that email.",
+            InvalidPasswordException: currentLanguage === "ko" ? "비밀번호가 규칙을 충족하지 않습니다." : "Password does not meet the required rules."
           }[data.__type] || data.message || data.__type;
           showMessage("reset-error", message);
-          setStatus("Password reset");
+          setStatus("passwordReset");
           return;
         }
 
-        showMessage("reset-success", "Password updated. You can sign in now.");
+        showMessage("reset-success", currentLanguage === "ko" ? "비밀번호가 변경되었습니다. 이제 로그인할 수 있습니다." : "Password updated. You can sign in now.");
         $("username-input").value = email;
         $("password-input").value = "";
         $("reset-pass").value = "";
         $("reset-confirm").value = "";
         $("reset-code").value = "";
         resetEmail = email;
-        setStatus("Awaiting sign in");
+        setStatus("awaitingSignIn");
         setTimeout(() => showAuthScreen("login-screen"), 900);
       } catch (error) {
-        showMessage("reset-error", `Network error: ${error.message}`);
-        setStatus("Connection issue");
+        showMessage("reset-error", `${currentLanguage === "ko" ? "네트워크 오류" : "Network error"}: ${error.message}`);
+        setStatus("connectionIssue");
       }
     }
 
@@ -2267,11 +2721,11 @@
       const password = $("password-input").value;
 
       if (!username || !password) {
-        showMessage("login-error", "Email and password are required.");
+        showMessage("login-error", currentLanguage === "ko" ? "이메일과 비밀번호가 필요합니다." : "Email and password are required.");
         return;
       }
 
-      setStatus("Signing in", true);
+      setStatus("signingIn", true);
 
       try {
         const data = await cognitoRequest("AWSCognitoIdentityProviderService.InitiateAuth", {
@@ -2294,7 +2748,7 @@
           pendingEmail = username;
           pendingPass = password;
           showAuthScreen("verify-screen");
-          setStatus("Awaiting verification");
+          setStatus("awaitingVerification");
 
           const resend = await cognitoRequest("AWSCognitoIdentityProviderService.ResendConfirmationCode", {
             ClientId: CLIENT_ID,
@@ -2302,24 +2756,24 @@
           });
 
           if (!resend.__type) {
-            showMessage("verify-success", "This account still needs email verification. A fresh verification code has been sent.");
+            showMessage("verify-success", currentLanguage === "ko" ? "이 계정은 이메일 인증이 필요합니다. 새 인증 코드를 전송했습니다." : "This account still needs email verification. A fresh verification code has been sent.");
             return;
           }
 
-          showMessage("verify-error", "This account still needs email verification. Enter your code below or request a new one.");
+          showMessage("verify-error", currentLanguage === "ko" ? "이 계정은 이메일 인증이 필요합니다. 아래에 코드를 입력하거나 새 코드를 요청하세요." : "This account still needs email verification. Enter your code below or request a new one.");
           return;
         }
 
         const message = {
-          NotAuthorizedException: "The email or password is incorrect.",
-          UserNotFoundException: "No account matched that email."
+          NotAuthorizedException: currentLanguage === "ko" ? "이메일 또는 비밀번호가 올바르지 않습니다." : "The email or password is incorrect.",
+          UserNotFoundException: currentLanguage === "ko" ? "해당 이메일과 일치하는 계정이 없습니다." : "No account matched that email."
         }[data.__type] || data.__type || "Authentication failed.";
 
         showMessage("login-error", message);
-        setStatus("Awaiting sign in");
+        setStatus("awaitingSignIn");
       } catch (error) {
-        showMessage("login-error", `Network error: ${error.message}`);
-        setStatus("Connection issue");
+        showMessage("login-error", `${currentLanguage === "ko" ? "네트워크 오류" : "Network error"}: ${error.message}`);
+        setStatus("connectionIssue");
       }
     }
 
@@ -2339,7 +2793,7 @@
       setAnswerQuery(question);
       setAnswerLoading();
       renderSources([]);
-      setStatus("Searching archive", true);
+      setStatus("searchingArchive", true);
 
       try {
         const response = await fetch(API_URL, {
@@ -2349,7 +2803,8 @@
             Authorization: idToken
           },
           body: JSON.stringify({
-            question
+            question,
+            preferredLanguage: currentLanguage
           })
         });
 
@@ -2358,19 +2813,19 @@
         if (response.status === 401) {
           sessionStorage.removeItem("pulpit_token");
           idToken = null;
-          setAnswerText("Your session expired. Please sign in again.", true);
-          setStatus("Session expired");
+          setAnswerText(text("messages.sessionExpiredBody"), true);
+          setStatus("sessionExpired");
           showLanding();
           return;
         }
 
-        setAnswerText(data.answer || data.error || "No response received.");
+        setAnswerText(data.answer || data.error || text("messages.noResponse"));
         renderSources(data.sources || []);
-        setStatus("Archive ready");
+        setStatus("archiveReady");
         $("question-input").value = "";
       } catch (error) {
-        setAnswerText(`Connection error: ${error.message}`, true);
-        setStatus("Connection issue");
+        setAnswerText(`${currentLanguage === "ko" ? "연결 오류" : "Connection error"}: ${error.message}`, true);
+        setStatus("connectionIssue");
       }
     }
 
@@ -2398,6 +2853,8 @@
       $("resend-btn").addEventListener("click", doResend);
       $("request-reset-btn").addEventListener("click", requestPasswordReset);
       $("confirm-reset-btn").addEventListener("click", confirmPasswordReset);
+      $("lang-en-btn").addEventListener("click", () => setLanguage("en"));
+      $("lang-ko-btn").addEventListener("click", () => setLanguage("ko"));
 
       $("search-btn").addEventListener("click", doQuery);
       $("clear-btn").addEventListener("click", clearWorkspace);
@@ -2455,6 +2912,7 @@
 
     function init() {
       bindEvents();
+      applyLanguage();
       setHttpBanner();
       renderTopicTabs();
       renderTopicCards(activeTopic);

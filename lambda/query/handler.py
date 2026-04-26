@@ -96,6 +96,7 @@ def lambda_handler(event, context):
 
         body        = json.loads(event.get("body", "{}"))
         question    = body.get("question", "").strip()
+        preferred_language = normalize_language(body.get("preferredLanguage"))
         claims      = event.get("requestContext", {}).get("authorizer", {}).get("claims", {})
         user_id     = claims.get("sub", "anonymous")
         user_groups = claims.get("cognito:groups", "member")
@@ -115,7 +116,7 @@ def lambda_handler(event, context):
             })
 
         # 1. Cache check — identical questions cost nothing
-        cached = check_cache(question)
+        cached = check_cache(question, preferred_language)
         if cached:
             return response(200, {**cached, "cached": True})
 
@@ -132,8 +133,12 @@ def lambda_handler(event, context):
 
         # 3. Generate answer
         sermon_context = build_sermon_context(sermons)
-        prompt         = f"{sermon_context}\n\nQuestion: {question}"
-        answer         = invoke_bedrock(prompt)
+        prompt         = (
+            f"{sermon_context}\n\n"
+            f"{language_instruction(preferred_language)}\n"
+            f"Question: {question}"
+        )
+        answer         = invoke_bedrock(prompt, preferred_language)
 
         # 4. Cache + audit log
         sources = [
@@ -145,7 +150,7 @@ def lambda_handler(event, context):
             for e in sermons
         ]
         result = {"answer": answer, "sermons_searched": len(sermons), "sources": sources}
-        cache_answer(question, result)
+        cache_answer(question, result, preferred_language)
         log_query(user_id, user_groups, question, answer)
 
         return response(200, result)
@@ -698,10 +703,19 @@ def build_catalog_response():
 
 # ── BEDROCK ────────────────────────────────────────────────────────────────
 
-def invoke_bedrock(prompt):
+def system_prompt_for_language(preferred_language):
+    language_rule = (
+        "7. Respond entirely in Korean."
+        if preferred_language == "ko"
+        else "7. Respond entirely in English."
+    )
+    return f"{SYSTEM_PROMPT}\n{language_rule}"
+
+
+def invoke_bedrock(prompt, preferred_language="en"):
     resp = bedrock.converse(
         modelId=MODEL_ID,
-        system=[{"text": SYSTEM_PROMPT}],
+        system=[{"text": system_prompt_for_language(preferred_language)}],
         messages=[{"role": "user", "content": [{"text": prompt}]}],
         inferenceConfig={"maxTokens": 2000},
         guardrailConfig={
@@ -715,14 +729,28 @@ def invoke_bedrock(prompt):
 
 # ── CACHE ──────────────────────────────────────────────────────────────────
 
-def question_hash(question):
-    return hashlib.sha256(question.lower().strip().encode()).hexdigest()
+def normalize_language(value):
+    return "ko" if str(value or "").strip().lower() == "ko" else "en"
 
 
-def check_cache(question):
+def language_instruction(preferred_language):
+    return (
+        "Respond entirely in Korean. Keep citations exactly in the [Sermon Title — Date] format."
+        if preferred_language == "ko"
+        else "Respond entirely in English. Keep citations exactly in the [Sermon Title — Date] format."
+    )
+
+
+def question_hash(question, preferred_language="en"):
+    normalized_language = normalize_language(preferred_language)
+    key = f"{normalized_language}:{question.lower().strip()}"
+    return hashlib.sha256(key.encode()).hexdigest()
+
+
+def check_cache(question, preferred_language="en"):
     try:
         table = dynamodb.Table(CACHE_TABLE)
-        item  = table.get_item(Key={"questionHash": question_hash(question)}).get("Item")
+        item  = table.get_item(Key={"questionHash": question_hash(question, preferred_language)}).get("Item")
         if item:
             if item.get("retrievalVersion") != RETRIEVAL_VERSION:
                 print("Cache miss: retrieval version changed")
@@ -749,13 +777,14 @@ def check_cache(question):
     return None
 
 
-def cache_answer(question, result):
+def cache_answer(question, result, preferred_language="en"):
     try:
         table = dynamodb.Table(CACHE_TABLE)
         now   = datetime.now(timezone.utc)
         table.put_item(Item={
-            "questionHash":     question_hash(question),
+            "questionHash":     question_hash(question, preferred_language),
             "question":         question,
+            "preferredLanguage": normalize_language(preferred_language),
             "answer":           result["answer"],
             "sermons_searched": result.get("sermons_searched", 0),
             "sources":          result.get("sources", []),
