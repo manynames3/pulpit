@@ -156,6 +156,13 @@ def find_relevant_sermons(question):
     if entries_with_embeddings:
         ranked = rank_sermons(entries_with_embeddings, [question])
         if ranked:
+            keyword_ranked = rerank_keyword_matches(ranked, question)
+            if keyword_ranked:
+                keyword_top = keyword_ranked[:TOP_K]
+                keyword_scores = [score for _, score in keyword_top]
+                print(f"Keyword-ranked top {TOP_K} scores: {[f'{s:.3f}' for s in keyword_scores]}")
+                return [entry for entry, _ in keyword_top]
+
             top = ranked[:TOP_K]
             scores = [score for _, score in top]
             print(f"Top {TOP_K} similarity scores: {[f'{s:.3f}' for s in scores]}")
@@ -212,6 +219,92 @@ def rank_sermons(entries_with_embeddings, queries):
         ),
         reverse=True
     )
+
+
+def rerank_keyword_matches(ranked_sermons, question):
+    if not is_literal_keyword_query(question):
+        return []
+
+    terms = extract_literal_terms(question)
+    if not terms:
+        return []
+
+    matched = []
+    for entry, semantic_score in ranked_sermons:
+        lexical_score = lexical_match_score(entry, terms)
+        if lexical_score <= 0:
+            continue
+        matched.append((entry, semantic_score, lexical_score))
+
+    if not matched:
+        print(f"No literal keyword matches for query '{question}'")
+        return []
+
+    matched.sort(
+        key=lambda item: (
+            pastor_priority(item[0]),
+            item[2],
+            item[1]
+        ),
+        reverse=True
+    )
+    print(f"Literal keyword rerank applied for '{question}' with {len(matched)} matches")
+    return [(entry, semantic_score) for entry, semantic_score, _ in matched]
+
+
+def is_literal_keyword_query(question):
+    tokens = [token for token in re.split(r"\s+", question.strip()) if token]
+    if not tokens or len(tokens) > 3 or len(question.strip()) > 20:
+        return False
+
+    hangul_or_word = re.findall(r"[가-힣A-Za-z0-9]+", question)
+    if not hangul_or_word:
+        return False
+
+    return "".join(hangul_or_word) == re.sub(r"\s+", "", question.strip())
+
+
+def extract_literal_terms(question):
+    terms = []
+    seen = set()
+
+    for token in re.findall(r"[가-힣A-Za-z0-9]+", question.lower()):
+        cleaned = token.strip()
+        if len(cleaned) < 2 or cleaned in seen:
+            continue
+        seen.add(cleaned)
+        terms.append(cleaned)
+
+    return terms
+
+
+def lexical_match_score(entry, terms):
+    title = (entry.get("title") or "").lower()
+    topics = " ".join(entry.get("topics", [])).lower()
+    scripture = " ".join(entry.get("scripture_references", [])).lower()
+    description = (entry.get("description") or "").lower()
+    transcript = (entry.get("transcript") or "").lower()
+
+    score = 0
+    for term in terms:
+        title_hits = title.count(term)
+        topic_hits = topics.count(term)
+        scripture_hits = scripture.count(term)
+        description_hits = description.count(term)
+        transcript_hits = transcript.count(term)
+
+        if title_hits:
+            score += 12 + min(title_hits, 3)
+        if topic_hits:
+            score += 10 + min(topic_hits, 3)
+        if scripture_hits:
+            score += 8 + min(scripture_hits, 2)
+        if description_hits:
+            score += 6 + min(description_hits, 2)
+        if transcript_hits:
+            score += min(transcript_hits, 12)
+
+    return score
 
 
 def expand_query_variants(question):

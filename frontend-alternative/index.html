@@ -899,6 +899,18 @@
       color: var(--ink-soft);
     }
 
+    .answer-query {
+      margin-top: 10px;
+      color: var(--text-soft);
+      font-size: 0.92rem;
+      line-height: 1.5;
+    }
+
+    .answer-query strong {
+      color: var(--ink);
+      font-weight: 800;
+    }
+
     .answer-note {
       margin-top: 18px;
     }
@@ -1363,6 +1375,7 @@
               <div>
                 <div class="section-kicker">Answer</div>
                 <h2 class="section-title">Archive response</h2>
+                <p class="answer-query" id="answer-query"><strong>Query:</strong> No query yet.</p>
               </div>
               <span class="answer-state" id="answer-state">Ready</span>
             </div>
@@ -1621,6 +1634,11 @@
     function setStatus(message, loading = false) {
       $("status-text").textContent = message;
       $("status-card").classList.toggle("loading", loading);
+    }
+
+    function setAnswerQuery(question) {
+      const value = question ? escapeHtml(question) : "No query yet.";
+      $("answer-query").innerHTML = `<strong>Query:</strong> ${value}`;
     }
 
     function showMessage(id, message) {
@@ -2005,6 +2023,7 @@
       $("response-text").className = "answer-body empty-state";
       $("response-text").textContent = "Your answer will appear here with a lead-pastor bias and the supporting sermon sources listed alongside it.";
       $("answer-state").textContent = "Ready";
+      setAnswerQuery("");
       $("response-note").textContent = "Use the source cards to verify context before sharing or citing a response.";
       $("sources-list").innerHTML = '<p class="empty-state">Run a search and the supporting sermon videos will be listed here.</p>';
       $("history-list").innerHTML = '<p class="empty-state">Recent questions and answer snapshots will accumulate here during this session.</p>';
@@ -2317,6 +2336,7 @@
       }
 
       lastQuestion = question;
+      setAnswerQuery(question);
       setAnswerLoading();
       renderSources([]);
       setStatus("Searching archive", true);
