@@ -2515,12 +2515,12 @@
       }, 350);
     }
 
-    function setAnswerText(text, isError = false) {
+    function setAnswerText(message, isError = false) {
       clearSearchLoading();
       const answer = $("response-text");
       answer.className = isError ? "answer-body" : "answer-body";
-      answer.textContent = text;
-      if (!text) {
+      answer.textContent = message;
+      if (!message) {
         answer.classList.add("empty-state");
       }
       $("answer-state").textContent = isError
