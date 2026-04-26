@@ -937,6 +937,17 @@
       margin-top: 18px;
     }
 
+    .answer-body h4 a {
+      color: inherit;
+      text-decoration: underline;
+      text-decoration-color: rgba(16, 45, 116, 0.22);
+      text-underline-offset: 0.18em;
+    }
+
+    .answer-body h4 a:hover {
+      text-decoration-color: rgba(16, 45, 116, 0.55);
+    }
+
     .answer-body ul,
     .answer-body ol {
       padding-left: 1.3rem;
@@ -944,6 +955,29 @@
 
     .answer-body li + li {
       margin-top: 8px;
+    }
+
+    .answer-inline-source {
+      margin-top: 12px;
+      margin-bottom: 14px;
+      padding: 14px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(16, 45, 116, 0.03), rgba(255, 255, 255, 0.92));
+      box-shadow: var(--shadow-soft);
+    }
+
+    .answer-inline-source .media-card {
+      align-items: start;
+    }
+
+    .answer-inline-source .media-thumb {
+      max-width: 168px;
+    }
+
+    .answer-inline-source .source-meta {
+      display: inline-block;
+      margin-bottom: 6px;
     }
 
     .answer-body strong {
@@ -1510,6 +1544,19 @@
         </div>
       </div>
 
+      <section class="history-panel">
+        <div class="panel-head">
+          <div>
+            <div class="section-kicker" id="history-kicker">Recent Questions</div>
+            <h2 class="section-title" id="history-title">Session history</h2>
+          </div>
+        </div>
+        <div class="history-list" id="history-list">
+          <p class="empty-state">Recent questions and answer snapshots will accumulate here during this session.</p>
+        </div>
+        <p class="footer-note" id="history-footer">Official archive workspace for Atlanta Bethel Church. This interface is intentionally narrower than the main website.</p>
+      </section>
+
       <section class="catalog-panel panel">
         <div class="catalog-toolbar">
           <div>
@@ -1536,19 +1583,6 @@
         <div class="catalog-footer">
           <button class="btn btn-secondary hidden" id="catalog-more-btn" type="button">Load More Sermons</button>
         </div>
-      </section>
-
-      <section class="history-panel">
-        <div class="panel-head">
-          <div>
-            <div class="section-kicker" id="history-kicker">Recent Questions</div>
-            <h2 class="section-title" id="history-title">Session history</h2>
-          </div>
-        </div>
-        <div class="history-list" id="history-list">
-          <p class="empty-state">Recent questions and answer snapshots will accumulate here during this session.</p>
-        </div>
-        <p class="footer-note" id="history-footer">Official archive workspace for Atlanta Bethel Church. This interface is intentionally narrower than the main website.</p>
       </section>
     </section>
   </div>
@@ -2037,6 +2071,7 @@
     let currentLanguage = localStorage.getItem("pulpit_language") === "ko" ? "ko" : "en";
     let currentStatusKey = "preparing";
     let currentStatusLoading = false;
+    let currentAnswerSources = [];
 
     const $ = (id) => document.getElementById(id);
 
@@ -2506,14 +2541,15 @@
 
     function renderSources(sources) {
       const list = $("sources-list");
+      currentAnswerSources = Array.isArray(sources) ? [...sources] : [];
       list.innerHTML = "";
 
-      if (!sources.length) {
+      if (!currentAnswerSources.length) {
         list.innerHTML = `<p class="empty-state">${escapeHtml(text("messages.noSources"))}</p>`;
         return;
       }
 
-      sources.forEach((source, index) => {
+      currentAnswerSources.forEach((source, index) => {
         const videoId = extractVideoId(source.youtube_url);
         const thumb = videoId ? youtubeThumb(videoId) : "";
         const sourceTitle = source.title || (currentLanguage === "ko" ? "제목 없는 설교" : "Untitled sermon");
@@ -2585,6 +2621,7 @@
 
     function clearWorkspace() {
       clearSearchLoading();
+      currentAnswerSources = [];
       $("response-text").className = "answer-body empty-state";
       $("response-text").textContent = text("messages.answerPlaceholder");
       $("answer-state").textContent = currentLanguage === "ko" ? "준비" : "Ready";
@@ -2920,6 +2957,7 @@
         });
 
         const data = await response.json();
+        currentAnswerSources = Array.isArray(data.sources) ? [...data.sources] : [];
 
         if (response.status === 401) {
           sessionStorage.removeItem("pulpit_token");
@@ -2931,7 +2969,7 @@
         }
 
         setAnswerText(data.answer || data.error || text("messages.noResponse"));
-        renderSources(data.sources || []);
+        renderSources(currentAnswerSources);
         setStatus("archiveReady");
         $("question-input").value = "";
       } catch (error) {
@@ -2952,9 +2990,77 @@
     }
 
     function formatAnswerInline(value) {
-      return escapeHtml(value)
+      const cleaned = String(value || "")
+        .replace(/\s*\[(?:Sermon|설교)\s*\d+\]\s*/gi, " ")
+        .replace(/\s{2,}/g, " ")
+        .trim();
+      return escapeHtml(cleaned)
         .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
         .replace(/`([^`]+)`/g, "<code>$1</code>");
+    }
+
+    function normalizeTitleForMatch(value) {
+      return String(value || "")
+        .toLowerCase()
+        .replace(/[“”"'`‘’]/g, "")
+        .replace(/\[[^\]]+\]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+
+    function parseHeadingSource(line) {
+      const titleMatch = line.match(/"([^"]+)"/);
+      const dateMatch = line.match(/\[(\d{4}-\d{2}-\d{2})\]/);
+      return {
+        title: titleMatch ? titleMatch[1].trim() : "",
+        date: dateMatch ? dateMatch[1] : ""
+      };
+    }
+
+    function findSourceForHeading(headingLine) {
+      const parsed = parseHeadingSource(headingLine);
+      const targetTitle = normalizeTitleForMatch(parsed.title);
+      const targetDate = parsed.date;
+      if (!targetTitle && !targetDate) {
+        return null;
+      }
+
+      return currentAnswerSources.find((source) => {
+        const sourceTitle = normalizeTitleForMatch(source.title || "");
+        const sourceDate = source.date || "";
+        const titleMatches = targetTitle && sourceTitle && (sourceTitle === targetTitle || sourceTitle.includes(targetTitle) || targetTitle.includes(sourceTitle));
+        const dateMatches = !targetDate || sourceDate === targetDate;
+        return titleMatches && dateMatches;
+      }) || null;
+    }
+
+    function renderInlineSourceCard(source) {
+      if (!source || !source.youtube_url) {
+        return "";
+      }
+
+      const sourceTitle = source.title || (currentLanguage === "ko" ? "제목 없는 설교" : "Untitled sermon");
+      const sourceDate = source.date || text("messages.metadataUnavailable");
+      const videoId = extractVideoId(source.youtube_url);
+      const thumb = videoId ? youtubeThumb(videoId) : "";
+      const openLabel = currentLanguage === "ko"
+        ? `${sourceTitle} 열기`
+        : `Open ${sourceTitle}`;
+      const thumbAlt = `${sourceTitle} ${text("messages.sourceThumb")}`;
+
+      return `
+        <div class="answer-inline-source">
+          <div class="media-card">
+            <a class="media-thumb" href="${escapeAttribute(source.youtube_url)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeAttribute(openLabel)}">
+              ${thumb ? `<img src="${thumb}" alt="${escapeAttribute(thumbAlt)}">` : ""}
+            </a>
+            <div class="media-content">
+              <span class="source-meta">${escapeHtml(text("messages.source"))}</span>
+              <p style="margin-top:4px; color: var(--text-soft);">${escapeHtml(sourceDate)}</p>
+            </div>
+          </div>
+        </div>
+      `;
     }
 
     function renderAnswerMarkup(message) {
@@ -2977,7 +3083,25 @@
         }
 
         if (/^####\s+/.test(line)) {
-          parts.push(`<h4>${formatAnswerInline(line.replace(/^####\s+/, ""))}</h4>`);
+          const headingText = line.replace(/^####\s+/, "");
+          const source = findSourceForHeading(headingText);
+          const parsed = parseHeadingSource(headingText);
+          const linkedHeading = source && source.youtube_url && parsed.title
+            ? headingText.replace(
+                `"${parsed.title}"`,
+                `"${parsed.title}"`
+              )
+            : headingText;
+          const renderedHeading = source && source.youtube_url
+            ? formatAnswerInline(linkedHeading).replace(
+                /"([^"]+)"/,
+                `<a href="${escapeAttribute(source.youtube_url)}" target="_blank" rel="noopener noreferrer">"$1"</a>`
+              )
+            : formatAnswerInline(headingText);
+          parts.push(`<h4>${renderedHeading}</h4>`);
+          if (source) {
+            parts.push(renderInlineSourceCard(source));
+          }
           i += 1;
           continue;
         }

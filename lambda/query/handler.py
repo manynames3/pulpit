@@ -47,7 +47,7 @@ MIN_RELEVANCE_SCORE = 0.35
 EXPANDED_RELEVANCE_SCORE = 0.30
 MIN_HYBRID_SCORE = 0.28
 MIN_CHUNK_SEMANTIC_SCORE = 0.22
-RETRIEVAL_VERSION = "v5-chunk-hybrid-mention-gate-lang-structured-answer"
+RETRIEVAL_VERSION = "v6-chunk-hybrid-mention-gate-lang-inline-source-answer"
 
 STATIC_QUERY_VARIANTS = {
     "wilderness": ["광야"],
@@ -707,6 +707,7 @@ def system_prompt_for_language(preferred_language):
             "9. Format the answer for easy scanning using markdown-like structure:\n"
             "   - Start each sermon entry with: #### 설교 N: \"설교 제목\" [YYYY-MM-DD]\n"
             "   - Under each sermon heading, use bullet points, not dashes in prose.\n"
+            "   - Do not repeat citations such as [설교 1] or [Sermon 1] at the end of each bullet.\n"
             "   - Keep each bullet concise and tied to the question.\n"
             "10. If multiple sermons are relevant, list them in order of relevance. If helpful, end with one short synthesis paragraph."
         )
@@ -717,6 +718,7 @@ def system_prompt_for_language(preferred_language):
             "9. Format the answer for easy scanning using markdown-like structure:\n"
             "   - Start each sermon entry with: #### Sermon N: \"Sermon Title\" [YYYY-MM-DD]\n"
             "   - Under each sermon heading, use bullet points, not prose blocks where bullets fit.\n"
+            "   - Do not repeat citations such as [Sermon 1] at the end of each bullet.\n"
             "   - Keep each bullet concise and tied to the question.\n"
             "10. If multiple sermons are relevant, list them in order of relevance. If helpful, end with one short synthesis paragraph."
         )
