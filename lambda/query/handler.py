@@ -220,6 +220,9 @@ def find_relevant_sermons_from_chunks(index, question):
         lexical_hits = [hit for hit in chunk_hits if hit["lexical_score"] > 0]
         if lexical_hits:
             chunk_hits = lexical_hits
+        else:
+            print(f"No literal chunk mentions found for exact query '{question}'")
+            return []
 
     best = chunk_hits[0]
     print(
