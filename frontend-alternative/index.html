@@ -1865,9 +1865,24 @@
         });
 
         if (data.__type) {
+          if (data.__type === "InvalidParameterException" && /verified email or phone_number/i.test(data.message || "")) {
+            const resend = await cognitoRequest("AWSCognitoIdentityProviderService.ResendConfirmationCode", {
+              ClientId: CLIENT_ID,
+              Username: email
+            });
+
+            if (!resend.__type) {
+              pendingEmail = email;
+              showAuthScreen("verify-screen");
+              showMessage("verify-success", "This account still needs email verification. A verification code has been sent to your email.");
+              setStatus("Awaiting verification");
+              return;
+            }
+          }
+
           const message = {
             UserNotFoundException: "No account matched that email.",
-            InvalidParameterException: "Please review the email format and try again.",
+            InvalidParameterException: "This account must be verified before you can reset the password.",
             LimitExceededException: "Too many attempts. Wait a moment and try again."
           }[data.__type] || data.message || data.__type;
           showMessage("reset-error", message);

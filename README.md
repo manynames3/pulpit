@@ -442,6 +442,8 @@ The same attribute update and resend step was also applied to `hangi87@aim.com`.
 - `describe-user-pool` now shows `AutoVerifiedAttributes: ["email"]`
 - `resend-confirmation-code` now returns `CodeDeliveryDetails` with `DeliveryMedium: EMAIL`
 
+**Password reset edge case:** Cognito still rejects `ForgotPassword` for `UNCONFIRMED` users because they do not yet have a verified recovery channel. The frontend now detects that response, resends the confirmation code automatically, and routes the user back into account verification instead of showing a misleading email-format error.
+
 **Lesson:** In Cognito, an email-looking username is not enough. If signup depends on email confirmation, the pool must auto-verify email and the client must submit the `email` attribute explicitly.
 
 ---
