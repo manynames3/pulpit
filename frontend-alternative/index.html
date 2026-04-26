@@ -3011,8 +3011,12 @@
     function parseHeadingSource(line) {
       const titleMatch = line.match(/"([^"]+)"/);
       const dateMatch = line.match(/\[(\d{4}-\d{2}-\d{2})\]/);
+      const withoutPrefix = line.replace(/^설교\s*\d+:\s*/i, "").replace(/^sermon\s*\d+:\s*/i, "").trim();
+      const inferredTitle = withoutPrefix
+        .replace(/\s*\[(\d{4}-\d{2}-\d{2})\]\s*$/, "")
+        .trim();
       return {
-        title: titleMatch ? titleMatch[1].trim() : "",
+        title: titleMatch ? titleMatch[1].trim() : inferredTitle,
         date: dateMatch ? dateMatch[1] : ""
       };
     }
@@ -3085,18 +3089,8 @@
         if (/^####\s+/.test(line)) {
           const headingText = line.replace(/^####\s+/, "");
           const source = findSourceForHeading(headingText);
-          const parsed = parseHeadingSource(headingText);
-          const linkedHeading = source && source.youtube_url && parsed.title
-            ? headingText.replace(
-                `"${parsed.title}"`,
-                `"${parsed.title}"`
-              )
-            : headingText;
           const renderedHeading = source && source.youtube_url
-            ? formatAnswerInline(linkedHeading).replace(
-                /"([^"]+)"/,
-                `<a href="${escapeAttribute(source.youtube_url)}" target="_blank" rel="noopener noreferrer">"$1"</a>`
-              )
+            ? `<a href="${escapeAttribute(source.youtube_url)}" target="_blank" rel="noopener noreferrer">${formatAnswerInline(headingText)}</a>`
             : formatAnswerInline(headingText);
           parts.push(`<h4>${renderedHeading}</h4>`);
           if (source) {
