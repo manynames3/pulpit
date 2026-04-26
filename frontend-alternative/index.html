@@ -527,12 +527,18 @@
       text-transform: uppercase;
     }
 
-    .workspace-grid {
+    .workspace-columns {
       display: grid;
       grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
       gap: 20px;
       align-items: start;
       margin-bottom: 20px;
+    }
+
+    .workspace-column {
+      display: grid;
+      gap: 20px;
+      align-content: start;
     }
 
     .workspace-panel {
@@ -743,14 +749,6 @@
       line-height: 1.66;
     }
 
-    .result-grid {
-      display: grid;
-      grid-template-columns: minmax(0, 1.32fr) minmax(320px, 0.88fr);
-      gap: 20px;
-      align-items: start;
-      margin-bottom: 20px;
-    }
-
     .answer-panel,
     .sources-panel,
     .history-panel {
@@ -888,8 +886,7 @@
     @media (max-width: 1120px) {
       .landing-grid,
       .workspace-intro,
-      .workspace-grid,
-      .result-grid,
+      .workspace-columns,
       .workspace-tips {
         grid-template-columns: 1fr;
       }
@@ -1226,81 +1223,83 @@
         </div>
       </section>
 
-      <div class="workspace-grid">
-        <section class="workspace-panel">
-          <div class="query-panel-top">
-            <div>
-              <div class="section-kicker">Ask the archive</div>
-              <h2 class="section-title">Search by topic, scripture, or question</h2>
-              <p class="workspace-copy">This build prioritizes sermons from 이혜진 담임목사 when sending your question to the archive.</p>
+      <div class="workspace-columns">
+        <div class="workspace-column">
+          <section class="workspace-panel">
+            <div class="query-panel-top">
+              <div>
+                <div class="section-kicker">Ask the archive</div>
+                <h2 class="section-title">Search by topic, scripture, or question</h2>
+                <p class="workspace-copy">This build prioritizes sermons from 이혜진 담임목사 when sending your question to the archive.</p>
+              </div>
             </div>
-          </div>
 
-          <textarea
-            class="query-input"
-            id="question-input"
-            rows="6"
-            spellcheck="false"
-            placeholder="Try: What has the lead pastor taught about prayer and surrender recently?"></textarea>
+            <textarea
+              class="query-input"
+              id="question-input"
+              rows="6"
+              spellcheck="false"
+              placeholder="Try: What has the lead pastor taught about prayer and surrender recently?"></textarea>
 
-          <div class="query-actions">
-            <div class="helper-text">Press Enter to search. Use Shift + Enter for a new line.</div>
-            <button class="btn btn-primary" id="search-btn" type="button">Search Sermons</button>
-          </div>
-
-          <div class="prompt-row" aria-label="Suggested prompts">
-            <button class="prompt-chip" type="button" data-prompt="What has the lead pastor taught about prayer and surrender?">Prayer and surrender</button>
-            <button class="prompt-chip" type="button" data-prompt="What has the lead pastor said about wisdom in Proverbs?">Wisdom in Proverbs</button>
-            <button class="prompt-chip" type="button" data-prompt="What has the lead pastor taught about grace and obedience?">Grace and obedience</button>
-          </div>
-        </section>
-
-        <aside class="topic-panel">
-          <div class="section-kicker">Popular Topics</div>
-          <h2 class="section-title">Open sermon picks by question area</h2>
-          <p class="topic-description">
-            These are curated lead-pastor picks. Choose a topic and open relevant sermon videos immediately.
-          </p>
-
-          <div class="topic-tabs" id="topic-tabs"></div>
-
-          <div class="topic-summary" id="topic-summary">
-            <strong>Topic summary</strong>
-            <p>Choose a topic to load recommended sermon videos.</p>
-          </div>
-
-          <div class="topic-card-list" id="topic-card-list">
-            <p class="empty-state">Topic selections will load here.</p>
-          </div>
-        </aside>
-      </div>
-
-      <div class="result-grid">
-        <section class="answer-panel">
-          <div class="answer-head">
-            <div>
-              <div class="section-kicker">Answer</div>
-              <h2 class="section-title">Archive response</h2>
+            <div class="query-actions">
+              <div class="helper-text">Press Enter to search. Use Shift + Enter for a new line.</div>
+              <button class="btn btn-primary" id="search-btn" type="button">Search Sermons</button>
             </div>
-            <span class="answer-state" id="answer-state">Ready</span>
-          </div>
-          <div class="answer-body empty-state" id="response-text">
-            Your answer will appear here with a lead-pastor bias and the supporting sermon sources listed alongside it.
-          </div>
-          <p class="answer-note" id="response-note">Use the source cards to verify context before sharing or citing a response.</p>
-        </section>
 
-        <section class="sources-panel">
-          <div class="panel-head">
-            <div>
-              <div class="section-kicker">Sources</div>
-              <h2 class="section-title">Supporting sermon videos</h2>
+            <div class="prompt-row" aria-label="Suggested prompts">
+              <button class="prompt-chip" type="button" data-prompt="What has the lead pastor taught about prayer and surrender?">Prayer and surrender</button>
+              <button class="prompt-chip" type="button" data-prompt="What has the lead pastor said about wisdom in Proverbs?">Wisdom in Proverbs</button>
+              <button class="prompt-chip" type="button" data-prompt="What has the lead pastor taught about grace and obedience?">Grace and obedience</button>
             </div>
-          </div>
-          <div class="sources-list" id="sources-list">
-            <p class="empty-state">Run a search and the supporting sermon videos will be listed here.</p>
-          </div>
-        </section>
+          </section>
+
+          <section class="answer-panel">
+            <div class="answer-head">
+              <div>
+                <div class="section-kicker">Answer</div>
+                <h2 class="section-title">Archive response</h2>
+              </div>
+              <span class="answer-state" id="answer-state">Ready</span>
+            </div>
+            <div class="answer-body empty-state" id="response-text">
+              Your answer will appear here with a lead-pastor bias and the supporting sermon sources listed alongside it.
+            </div>
+            <p class="answer-note" id="response-note">Use the source cards to verify context before sharing or citing a response.</p>
+          </section>
+        </div>
+
+        <div class="workspace-column">
+          <aside class="topic-panel">
+            <div class="section-kicker">Popular Topics</div>
+            <h2 class="section-title">Open sermon picks by question area</h2>
+            <p class="topic-description">
+              These are curated lead-pastor picks. Choose a topic and open relevant sermon videos immediately.
+            </p>
+
+            <div class="topic-tabs" id="topic-tabs"></div>
+
+            <div class="topic-summary" id="topic-summary">
+              <strong>Topic summary</strong>
+              <p>Choose a topic to load recommended sermon videos.</p>
+            </div>
+
+            <div class="topic-card-list" id="topic-card-list">
+              <p class="empty-state">Topic selections will load here.</p>
+            </div>
+          </aside>
+
+          <section class="sources-panel">
+            <div class="panel-head">
+              <div>
+                <div class="section-kicker">Sources</div>
+                <h2 class="section-title">Supporting sermon videos</h2>
+              </div>
+            </div>
+            <div class="sources-list" id="sources-list">
+              <p class="empty-state">Run a search and the supporting sermon videos will be listed here.</p>
+            </div>
+          </section>
+        </div>
       </div>
 
       <section class="history-panel">
