@@ -49,19 +49,20 @@ The system finds relevant sermon segments and returns a cited answer — sermon 
 ### System Diagram
 
 ```
-INGESTION (weekly)
-──────────────────
-EventBridge cron
-  → Lambda: ingest
-      - YouTube Data API v3 (fetch new video IDs)
-      - Filter: 2026+ only (cost control)
-      - youtube-transcript-api (free captions, no key needed)
-      - Extract scripture references from description
-      - Write JSON to S3
-  → Bedrock KB sync
-      - Chunk into ~300 token paragraphs (20% overlap)
-      - Embed via Titan Embeddings
-      - Store in managed vector store
+INGESTION (local, low-cost)
+───────────────────────────
+Mac / cron / manual run
+  → scripts/ingest-local.py
+      - YouTube uploads playlist API
+      - youtube-transcript-api (free captions)
+      - Filter: lead pastor + sermon-like content
+      - Write sermon JSON to S3
+  → scripts/rebuild_index.py
+      - Load raw sermon JSONs from S3
+      - Chunk transcripts into overlapping word windows
+      - Reuse unchanged embeddings when possible
+      - Embed new sermons/chunks via Titan Embeddings
+      - Write a single chunked index.json back to S3
 
 QUERY (per request)
 ───────────────────
@@ -69,16 +70,19 @@ API Gateway (HTTPS)
   → Cognito (member or staff JWT)
   → Lambda: query
       - Crisis keyword check (pre-Bedrock redirect)
-      → Bedrock Guardrails (API-level enforcement)
-          - Block: political opinions, staff info, prompt injection
-          - Redirect: pastoral care disclosures → pastor contact
-          - Ground: responses must cite actual sermon content
-      → Bedrock Knowledge Base
-          - Convert question to vector
-          - Find 3-5 most relevant sermon chunks
+      - Load chunked index.json from S3 (Lambda-cached)
+      - Hybrid retrieval:
+          - semantic chunk scoring via Titan embeddings
+          - lexical boosts for title/topics/scripture/transcript mentions
+          - deterministic Bible-term expansions (e.g. Genesis → 창세기)
+      - Collapse the best chunks back to top sermons
+      → Bedrock Guardrails
       → Bedrock Nova Lite
+          - Read only the matched excerpts
           - Synthesize cited answer
-      → DynamoDB (audit log)
+      → DynamoDB
+          - 30-day answer cache
+          - audit log
   → Response to user
 
 SECURITY (always on)
@@ -108,9 +112,6 @@ pulpit/
 │   │   ├── s3.tf              # transcript bucket
 │   │   └── ssm.tf             # YouTube API key (SecureString)
 │   │
-│   ├── knowledge-base/
-│   │   └── bedrock-kb.tf      # KB + managed vector store + chunking config
-│   │
 │   ├── query/
 │   │   ├── api-gateway.tf
 │   │   ├── cognito.tf         # user pool, member + staff groups
@@ -124,14 +125,16 @@ pulpit/
 │       └── guardduty.tf       # toggleable
 │
 ├── lambda/
-│   ├── ingest/handler.py      # YouTube → transcript → S3
-│   └── query/handler.py       # guardrails → KB → cited answer
+│   ├── ingest/handler.py      # legacy AWS ingest path
+│   └── query/handler.py       # chunked hybrid retrieval → cited answer
 │
 ├── environments/
 │   ├── dev/terraform.tfvars
 │   └── prod/terraform.tfvars
 │
 └── scripts/
+    ├── ingest-local.py        # primary local ingest path
+    ├── rebuild_index.py       # chunk + embed + publish search index
     ├── set-api-key.sh         # store key in SSM after deploy
     └── create-ci-user.sh      # least-privilege IAM for CI
 ```
@@ -156,17 +159,31 @@ This documents every cost decision made during development — including decisio
 
 ---
 
-### Decision 2 — OpenSearch Serverless vs Bedrock Managed Vector Store
+### Decision 2 — OpenSearch Serverless vs S3 + Lambda Chunked Index
 
-**Initial plan:** Use OpenSearch Serverless as the vector store — the AWS-recommended default for Bedrock KB.
+**Initial plan:** Use OpenSearch Serverless for full-text + vector retrieval.
 
-**Discovery:** OpenSearch Serverless has a **minimum charge of ~$175/month** regardless of usage. "Serverless" means no cluster management, not pay-per-use. AWS keeps minimum capacity units running whether you have zero queries or a million.
+**Discovery:** OpenSearch Serverless adds a real fixed floor cost for a problem that is still small enough to solve inside the existing serverless stack. This archive is tens of sermons, not millions of documents. The hard problem here is retrieval quality on brief mentions, not distributed search infrastructure.
 
-The entire rest of this system costs ~$2/month. A $175/month vector store for a congregation with 50 queries/month is indefensible.
+**What we actually need:**
+- chunk-level transcript retrieval
+- exact term matching for Bible names / Korean keywords
+- semantic ranking for broader natural-language questions
 
-**Bedrock Managed Vector Store:** AWS manages the vector store internally at zero idle cost. Pay only for embedding at ingest (~$0.10/sermon, one-time) and query costs (fractions of a cent).
+All three can be done with:
+- S3-stored chunked `index.json`
+- Titan embeddings at ingest time
+- pure-Python hybrid ranking inside Lambda
 
-**Result: OpenSearch Serverless removed. Saves $175/month. Upgrade path documented for >50k queries/month.**
+That keeps the system on near-zero idle cost. OpenSearch would improve search features, but not enough to justify the fixed cost and operational weight for this application.
+
+**Result: OpenSearch removed from the v1/v2 architecture.**
+
+**Why this stack won:**
+- no always-on search bill
+- good enough retrieval quality after chunking + lexical boosts
+- much simpler operations
+- easy future migration if archive size or query volume grows materially
 
 ---
 
@@ -174,7 +191,7 @@ The entire rest of this system costs ~$2/month. A $175/month vector store for a 
 
 **Initial plan:** Claude Sonnet as the default LLM — highest quality.
 
-**Reality check:** The LLM's job in a RAG system is to read retrieved chunks and summarize them clearly. The Knowledge Base does the hard work of finding relevant content. Synthesizing a sermon summary is not a complex reasoning task.
+**Reality check:** The LLM's job in this system is to read retrieved excerpts and summarize them clearly. The expensive part is not model reasoning — it is getting the right sermon chunks in front of the model. Synthesizing a sermon summary is not a complex reasoning task.
 
 **Cost per 1,000 queries:**
 
@@ -229,7 +246,7 @@ Nova Lite is AWS's newest lightweight model, designed specifically for retrieval
 | Service | Reason |
 |---|---|
 | AWS Transcribe | YouTube captions are free. Transcribe adds $47/year for zero benefit |
-| OpenSearch Serverless | $175/month minimum idle cost. Replaced by Bedrock managed vector store |
+| OpenSearch Serverless | Too much fixed cost for this archive size. Replaced by S3 + Lambda chunked hybrid search |
 | CloudFront | API Gateway serves HTTPS globally. Zero latency benefit at church scale |
 | X-Ray tracing | CloudWatch logs sufficient. X-Ray adds cost without proportional debug value |
 | Custom KMS keys | S3 AES256 default encryption is free and sufficient for pilot |
@@ -255,7 +272,7 @@ Nova Lite is AWS's newest lightweight model, designed specifically for retrieval
 |---|---|
 | Lambda, EventBridge, Cognito, DynamoDB, CloudTrail | ~$0 |
 | S3 storage | ~$0.05 |
-| Bedrock KB sync (new weekly sermons) | ~$0.40 |
+| Index rebuild embeddings (new weekly sermons/chunks) | ~$0.40 |
 | Bedrock Nova Lite queries | ~$0.50–1.00 |
 | GuardDuty (if enabled) | ~$1–2 |
 | **Total** | **~$1–2/month** |
@@ -317,12 +334,12 @@ variable "ingest_schedule" { default = "cron(0 6 ? * MON *)" }
 ### Quality
 - Upgrade to Claude Haiku — one variable change, better theological nuance
 - Add Bedrock reranking — improves retrieval precision, ~$0.002/query
-- Korean ingestion — separate S3 prefix, language tag, bilingual KB
+- Korean ingestion — separate S3 prefix, language tag, bilingual index variants
 
 ### Scale
 - Multi-church — parameterize channel ID and Cognito pool per church
 - S3 Terraform backend — required for team collaboration
-- OpenSearch Serverless — only justified above ~50,000 queries/month
+- OpenSearch Serverless — only justified once archive size or query volume materially outgrows Lambda-based hybrid search
 
 ---
 
@@ -373,7 +390,7 @@ Deploy is always manual. CI never auto-applies. Plan output posted as PR comment
 
 - **Terraform IaC** — modular, multi-environment, variable-driven
 - **AWS Serverless** — Lambda, API Gateway, EventBridge, DynamoDB, S3, SSM
-- **AWS Bedrock** — Knowledge Base, Guardrails, managed vector store, model selection
+- **AWS Bedrock** — Titan embeddings, Guardrails, Nova Lite model selection
 - **Cost engineering** — real decisions, real numbers, reversals documented
 - **Security** — IAM least-privilege, CloudTrail, Cognito tiers, secrets management
 - **CI/CD** — GitHub Actions with fmt, validate, Checkov, plan
@@ -478,12 +495,12 @@ The same attribute update and resend step was also applied to `hangi87@aim.com`.
 
 **What we tried first:** Switched to `S3` as the storage backend. Also invalid — not in the enum.
 
-**Final decision:** Removed Bedrock Knowledge Base entirely for the v1 pilot. For ~16 sermons (2026-only), a vector database is overkill. The query Lambda loads transcript JSONs directly from S3 and passes relevant ones to Claude. Scales to ~50 sermons before context becomes a concern.
+**Final decision:** Removed Bedrock Knowledge Base entirely for the v1 pilot. For this archive size, a dedicated vector store was overkill. The system now keeps a chunked `index.json` in S3 and does hybrid retrieval in Lambda. That preserves low cost while materially improving mention-search over the original sermon-level approach.
 
 **Documented upgrade path:** When the archive grows beyond 50 sermons:
-- Option A: OpenSearch Serverless (~$175/month, best AWS-native)
-- Option B: Pinecone free tier (2GB free forever, data leaves AWS)
-- Option C: RDS with pgvector (free 12 months, ~$15/month after)
+- Option A: stay on S3 + Lambda and rebuild the chunked index
+- Option B: move to OpenSearch only if archive size / query volume justifies the fixed search cost
+- Option C: evaluate pgvector or another managed search layer if filtering and scale requirements become real
 
 **Lesson:** Not every AWS feature has Terraform support yet. Always verify the provider schema before designing around a feature.
 

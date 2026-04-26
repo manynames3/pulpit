@@ -1,23 +1,17 @@
 """
-Pulpit — Query Lambda v2
+Pulpit — Query Lambda v3
 
-Semantic search over the full sermon archive using Titan Embeddings.
-Zero baseline cost — no OpenSearch, no Pinecone, no vector DB.
+Chunked hybrid search over the sermon archive using a prebuilt S3 index.
+Zero baseline cost — no OpenSearch, no Pinecone, no vector database.
 
 How it works:
 1. Check DynamoDB cache — identical questions return instantly
-2. Load pre-computed embedding index from S3 (one GET, cached in Lambda global)
+2. Load pre-computed chunked index from S3 (one GET, cached in Lambda global)
 3. Embed the question via Titan Embed Text v2
-4. Cosine similarity in pure Python → top 5 most relevant sermons
-5. Nova Lite generates a cited answer from those 5 sermons
-6. Cache result in DynamoDB (30-day TTL)
-
-Why index.json instead of N individual S3 GETs:
-- API Gateway hard-cuts at 29s. Loading 100 files × ~80ms = 8s just for S3.
-- Single index.json loads in ~200ms regardless of archive size.
-- Lambda global caches it across warm invocations — subsequent calls are instant.
-
-Scales to ~500 sermons before the index file becomes unwieldy (~5MB).
+4. Hybrid rank transcript chunks with semantic + lexical signals
+5. Collapse the best chunks back to sermons
+6. Nova Lite generates a cited answer from the matched sermon excerpts
+7. Cache the result for repeat questions
 """
 
 import json
@@ -45,11 +39,30 @@ ENVIRONMENT    = os.environ["ENVIRONMENT"]
 LEAD_PASTOR    = os.environ.get("LEAD_PASTOR_NAME", "이혜진 목사")
 
 TOP_K           = 5     # sermons sent to Nova Lite
+CHUNK_TOP_K     = 12    # candidate chunk hits before collapsing to sermons
 FALLBACK_LIMIT  = 30    # max sermons if index has no embeddings yet
 CACHE_TTL_DAYS  = 30
 INDEX_TTL_SEC   = 600   # reload index every 10 min to pick up new sermons
 MIN_RELEVANCE_SCORE = 0.35
 EXPANDED_RELEVANCE_SCORE = 0.30
+MIN_HYBRID_SCORE = 0.28
+MIN_CHUNK_SEMANTIC_SCORE = 0.22
+RETRIEVAL_VERSION = "v4-chunk-hybrid"
+
+STATIC_QUERY_VARIANTS = {
+    "wilderness": ["광야"],
+    "noah": ["노아"],
+    "noahs ark": ["노아", "방주", "홍수"],
+    "noah's ark": ["노아", "방주", "홍수"],
+    "flood": ["홍수", "노아"],
+    "flooding": ["홍수", "노아"],
+    "pillar of fire": ["불기둥"],
+    "fire column": ["불기둥"],
+    "genesis": ["창세기"],
+    "jacob": ["야곱"],
+    "moses": ["모세"],
+    "exodus": ["출애굽"],
+}
 
 CRISIS_KEYWORDS = [
     "suicide", "kill myself", "self harm", "abuse", "hurt myself",
@@ -146,13 +159,21 @@ def lambda_handler(event, context):
 # ── SEMANTIC SEARCH ────────────────────────────────────────────────────────
 
 def find_relevant_sermons(question):
-    """Embed question, cosine-rank all sermons, return top K."""
+    """Rank archive results and return top sermons with matched excerpts."""
     index = get_sermon_index()
     if not index:
         return []
 
-    entries_with_embeddings = [e for e in index if e.get("embedding")]
+    if any(entry.get("chunks") for entry in index):
+        chunk_results = find_relevant_sermons_from_chunks(index, question)
+        if chunk_results:
+            return chunk_results
 
+    entries_with_embeddings = [e for e in index if e.get("embedding")]
+    return find_relevant_sermons_by_sermon_embedding(index, entries_with_embeddings, question)
+
+
+def find_relevant_sermons_by_sermon_embedding(index, entries_with_embeddings, question):
     if entries_with_embeddings:
         ranked = rank_sermons(entries_with_embeddings, [question])
         if ranked:
@@ -189,6 +210,33 @@ def find_relevant_sermons(question):
     return all_entries[:FALLBACK_LIMIT]
 
 
+def find_relevant_sermons_from_chunks(index, question):
+    query_variants = build_query_bundle(index, question)
+    chunk_hits = rank_chunk_hits(index, query_variants, question)
+    if not chunk_hits:
+        return []
+
+    if is_literal_keyword_query(question):
+        lexical_hits = [hit for hit in chunk_hits if hit["lexical_score"] > 0]
+        if lexical_hits:
+            chunk_hits = lexical_hits
+
+    best = chunk_hits[0]
+    print(
+        f"Top chunk scores — combined={best['combined_score']:.3f}, "
+        f"semantic={best['semantic_score']:.3f}, lexical={best['lexical_score']}"
+    )
+    if (
+        best["combined_score"] < MIN_HYBRID_SCORE
+        and best["semantic_score"] < MIN_CHUNK_SEMANTIC_SCORE
+        and best["lexical_score"] == 0
+    ):
+        print("Chunk retrieval below hybrid thresholds")
+        return []
+
+    return collapse_chunk_hits_to_sermons(chunk_hits)
+
+
 def pastor_priority(entry):
     pastor = (entry.get("pastor_name") or "").strip()
     if not pastor:
@@ -219,6 +267,122 @@ def rank_sermons(entries_with_embeddings, queries):
         ),
         reverse=True
     )
+
+
+def build_query_bundle(index, question):
+    variants = []
+    seen = {question.strip().lower()}
+
+    for candidate in static_query_variants(question) + expand_query_variants(question):
+        core = normalize_variant(candidate)
+        if not core:
+            continue
+        key = core.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        variants.append(core)
+
+    filtered = [variant for variant in variants if archive_contains_term(index, variant)]
+    return [question] + filtered
+
+
+def static_query_variants(question):
+    normalized = re.sub(r"\s+", " ", question.strip().lower())
+    normalized = normalized.replace("’", "'")
+    matches = []
+    for key, values in STATIC_QUERY_VARIANTS.items():
+        if normalized == key or key in normalized:
+            matches.extend(values)
+    return matches
+
+
+def rank_chunk_hits(index, queries, question):
+    vectors = []
+    for query in queries:
+        vec = embed_text(query)
+        if vec:
+            vectors.append(vec)
+
+    if not vectors:
+        return []
+
+    terms = collect_search_terms([question] + queries)
+    hits = []
+
+    for entry in index:
+        for chunk in entry.get("chunks", []):
+            embedding = chunk.get("embedding")
+            if not embedding:
+                continue
+
+            semantic_score = max(cosine_similarity(vec, embedding) for vec in vectors)
+            lexical_score = lexical_match_score(entry, terms, chunk.get("text", ""))
+            combined_score = semantic_score + lexical_bonus(lexical_score)
+
+            if semantic_score <= 0 and lexical_score <= 0:
+                continue
+
+            hits.append({
+                "entry": entry,
+                "chunk": chunk,
+                "semantic_score": semantic_score,
+                "lexical_score": lexical_score,
+                "combined_score": combined_score,
+            })
+
+    hits.sort(
+        key=lambda item: (
+            pastor_priority(item["entry"]),
+            item["combined_score"],
+            item["lexical_score"],
+            item["semantic_score"],
+        ),
+        reverse=True,
+    )
+    return hits[:CHUNK_TOP_K]
+
+
+def collapse_chunk_hits_to_sermons(chunk_hits):
+    sermons = {}
+
+    for hit in chunk_hits:
+        entry = hit["entry"]
+        sermon_id = entry.get("sermon_id")
+        if sermon_id not in sermons:
+            sermons[sermon_id] = {
+                **entry,
+                "match_score": hit["combined_score"],
+                "matched_chunks": [],
+            }
+
+        sermon = sermons[sermon_id]
+        sermon["match_score"] = max(sermon["match_score"], hit["combined_score"])
+        sermon["matched_chunks"].append({
+            "text": hit["chunk"].get("text", ""),
+            "semantic_score": hit["semantic_score"],
+            "lexical_score": hit["lexical_score"],
+            "combined_score": hit["combined_score"],
+        })
+
+    results = []
+    for sermon in sermons.values():
+        sermon["matched_chunks"] = sorted(
+            sermon["matched_chunks"],
+            key=lambda chunk: (chunk["combined_score"], chunk["lexical_score"], chunk["semantic_score"]),
+            reverse=True,
+        )[:2]
+        results.append(sermon)
+
+    results.sort(
+        key=lambda item: (
+            pastor_priority(item),
+            item.get("match_score", 0),
+            item.get("date", ""),
+        ),
+        reverse=True,
+    )
+    return results[:TOP_K]
 
 
 def rerank_keyword_matches(ranked_sermons, question):
@@ -278,12 +442,26 @@ def extract_literal_terms(question):
     return terms
 
 
-def lexical_match_score(entry, terms):
+def collect_search_terms(queries):
+    terms = []
+    seen = set()
+
+    for query in queries:
+        for term in extract_literal_terms(query):
+            if term in seen:
+                continue
+            seen.add(term)
+            terms.append(term)
+
+    return terms
+
+
+def lexical_match_score(entry, terms, transcript_text=None):
     title = (entry.get("title") or "").lower()
     topics = " ".join(entry.get("topics", [])).lower()
     scripture = " ".join(entry.get("scripture_references", [])).lower()
     description = (entry.get("description") or "").lower()
-    transcript = (entry.get("transcript") or "").lower()
+    transcript = (transcript_text if transcript_text is not None else entry.get("transcript", "")).lower()
 
     score = 0
     for term in terms:
@@ -305,6 +483,12 @@ def lexical_match_score(entry, terms):
             score += min(transcript_hits, 12)
 
     return score
+
+
+def lexical_bonus(score):
+    if score <= 0:
+        return 0.0
+    return min(score / 24.0, 0.75)
 
 
 def minimum_term_length(term):
@@ -381,10 +565,14 @@ def archive_contains_term(index, term):
         return False
 
     for entry in index:
+        chunk_text = " ".join(chunk.get("text", "") for chunk in entry.get("chunks", []))
         hay = " ".join([
             entry.get("title", ""),
             " ".join(entry.get("topics", [])),
+            " ".join(entry.get("key_themes", [])),
             " ".join(entry.get("scripture_references", [])),
+            entry.get("description", ""),
+            chunk_text,
             entry.get("transcript", "")[:4000]
         ]).lower()
         if needle in hay:
@@ -450,7 +638,7 @@ def cosine_similarity(a, b):
 
 def build_sermon_context(entries):
     """Format top-K sermon excerpts for Nova Lite's context window."""
-    lines = ["Relevant sermon excerpts from the archive (retrieved by semantic search):\n"]
+    lines = ["Relevant sermon excerpts from the archive (retrieved by chunked hybrid search):\n"]
 
     for i, entry in enumerate(entries, 1):
         title      = entry.get("title", "Unknown")
@@ -458,6 +646,8 @@ def build_sermon_context(entries):
         pastor     = entry.get("pastor_name", "")
         topics     = ", ".join(entry.get("topics", []))
         scripture  = ", ".join(entry.get("scripture_references", []))
+        description = entry.get("description", "")
+        matched_chunks = entry.get("matched_chunks", [])
         transcript = entry.get("transcript", "")[:2000]
 
         lines.append(f"--- SERMON {i} ---")
@@ -466,7 +656,17 @@ def build_sermon_context(entries):
         if pastor:    lines.append(f"Pastor: {pastor}")
         if topics:    lines.append(f"Topics: {topics}")
         if scripture: lines.append(f"Scripture: {scripture}")
-        lines.append(f"Transcript:\n{transcript}\n")
+        if description:
+            lines.append(f"Description: {description}")
+
+        if matched_chunks:
+            lines.append("Matched excerpts:")
+            for chunk in matched_chunks[:2]:
+                lines.append(f"- {chunk.get('text', '')[:900]}")
+        elif transcript:
+            lines.append(f"Transcript:\n{transcript}")
+
+        lines.append("")
 
     return "\n".join(lines)
 
@@ -521,6 +721,9 @@ def check_cache(question):
         table = dynamodb.Table(CACHE_TABLE)
         item  = table.get_item(Key={"questionHash": question_hash(question)}).get("Item")
         if item:
+            if item.get("retrievalVersion") != RETRIEVAL_VERSION:
+                print("Cache miss: retrieval version changed")
+                return None
             if "sources" not in item:
                 print("Cache miss: legacy entry missing sources")
                 return None
@@ -553,6 +756,7 @@ def cache_answer(question, result):
             "answer":           result["answer"],
             "sermons_searched": result.get("sermons_searched", 0),
             "sources":          result.get("sources", []),
+            "retrievalVersion": RETRIEVAL_VERSION,
             "cachedAt":         now.isoformat(),
             "expiresAt":        int(now.timestamp()) + (CACHE_TTL_DAYS * 86400)
         })
@@ -594,7 +798,7 @@ def response(status_code, body):
             "Content-Type":                 "application/json",
             "Access-Control-Allow-Origin":  "*",
             "Access-Control-Allow-Headers": "Content-Type,Authorization",
-            "Access-Control-Allow-Methods": "POST,OPTIONS"
+            "Access-Control-Allow-Methods": "GET,POST,OPTIONS"
         },
         "body": json.dumps(body, ensure_ascii=False)
     }

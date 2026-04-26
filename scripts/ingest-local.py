@@ -24,6 +24,7 @@ import boto3
 import requests
 from datetime import datetime, timezone
 from youtube_transcript_api import YouTubeTranscriptApi
+from rebuild_index import rebuild_index
 
 # ── CONFIG ────────────────────────────────────────────────────────────────
 #
@@ -49,6 +50,7 @@ AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 MAX_NEW_PER_RUN = int(os.environ.get("PULPIT_MAX_NEW_PER_RUN", "12"))
 SLEEP_BETWEEN_TRANSCRIPTS_SEC = float(os.environ.get("PULPIT_SLEEP_SEC", "2.5"))
 MAX_TRANSCRIPT_ATTEMPTS_PER_RUN = int(os.environ.get("PULPIT_MAX_TRANSCRIPT_ATTEMPTS", "40"))
+REBUILD_INDEX_AFTER_INGEST = os.environ.get("PULPIT_REBUILD_INDEX", "1") == "1"
 
 # Uploads playlist = channel ID with UC replaced by UU
 UPLOADS_PLAYLIST = CHANNEL_ID.replace("UC", "UU", 1)
@@ -306,3 +308,6 @@ print(f"Ingested: {len(ingested)}  |  Skipped: {len(skipped)}  |  Errors: {len(e
 
 if ingested:
     print(f"\nUploaded to s3://{BUCKET}/transcripts/")
+    if REBUILD_INDEX_AFTER_INGEST:
+        print("\nRefreshing chunked search index...")
+        rebuild_index(bucket=BUCKET, region=AWS_REGION)
