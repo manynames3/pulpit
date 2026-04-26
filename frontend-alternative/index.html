@@ -1774,7 +1774,7 @@
           const message = {
             UsernameExistsException: "An account with this email already exists.",
             InvalidPasswordException: "Password does not meet the required rules.",
-            InvalidParameterException: "Please review the email format and try again."
+            InvalidParameterException: "Enter a valid email address."
           }[data.__type] || data.message || data.__type;
           showMessage("signup-error", message);
           setStatus("Creating account");
@@ -1874,7 +1874,7 @@
             if (!resend.__type) {
               pendingEmail = email;
               showAuthScreen("verify-screen");
-              showMessage("verify-success", "This account still needs email verification. A verification code has been sent to your email.");
+              showMessage("verify-success", "No verified account matched that email yet. If this account exists, verify it first. A verification code has been sent to your email.");
               setStatus("Awaiting verification");
               return;
             }
@@ -1882,7 +1882,7 @@
 
           const message = {
             UserNotFoundException: "No account matched that email.",
-            InvalidParameterException: "This account must be verified before you can reset the password.",
+            InvalidParameterException: "No verified account matched that email. Verify the account first or create one.",
             LimitExceededException: "Too many attempts. Wait a moment and try again."
           }[data.__type] || data.message || data.__type;
           showMessage("reset-error", message);
