@@ -646,3 +646,66 @@ Add:
 0 8 * * 1 cd /opt/pulpit && set -a && . /opt/pulpit/.env && set +a && /usr/bin/python3 /opt/pulpit/scripts/ingest-local.py >> /opt/pulpit/ingest.log 2>> /opt/pulpit/ingest.err.log
 ```
 
+---
+
+## Alternative Frontend Deployment
+
+This repo now includes an alternative static frontend at `frontend-alternative/index.html`.
+
+The deployment split for that frontend is:
+
+- `Cloudflare Pages` for static hosting
+- `AWS` for Cognito, API Gateway, Lambda, DynamoDB, and Bedrock
+
+### Why use Cloudflare Pages for this frontend
+
+This specific frontend is a static site. It does not need SSR, a backend runtime, or a JavaScript build pipeline.
+
+Because of that, the cheapest practical hosting model is:
+
+- static frontend on Cloudflare Pages
+- existing application backend in AWS
+
+That keeps the fixed frontend cost close to zero while preserving the current AWS application architecture.
+
+For this project, the main long-term cost driver is the AWS backend, especially AI usage, not static asset hosting.
+
+### Why not default to Amplify
+
+AWS Amplify is still a valid option. It is not required for this frontend.
+
+Cloudflare Pages was chosen here because:
+
+- the frontend is static
+- the hosting bill is typically lower
+- it avoids paying AWS-hosting convenience costs for features this frontend does not use
+
+### When Amplify still makes sense
+
+Use Amplify instead if you want:
+
+- everything to stay inside the AWS ecosystem
+- Git-based frontend deploys managed entirely in AWS
+- one-vendor operational ownership
+- a future path toward a more complex application frontend
+
+Short version:
+
+- `Cloudflare Pages` is the cost-first option
+- `Amplify` is the AWS-ecosystem option
+
+### Files added for the alternative frontend
+
+- `frontend-alternative/index.html`
+- `DEPLOY.md`
+- `wrangler.toml`
+
+### Deployment notes
+
+The Cloudflare Pages deploy path expects:
+
+- Framework preset: `None`
+- Build command: blank
+- Build output directory: `frontend-alternative`
+
+Before production use, update API Gateway CORS for the final frontend domain. The detailed deployment and CORS steps are documented in `DEPLOY.md`.
