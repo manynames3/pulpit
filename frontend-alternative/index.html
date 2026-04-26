@@ -1552,6 +1552,11 @@
           confirmNewPassword: "Confirm New Password",
           featuredSermon: "Featured Sermon",
           featuredCopy: "Start here, then branch into related topic picks below.",
+          workspaceFocus: "Lead Pastor Focus",
+          workspaceOfficial: "Official archive workspace",
+          workspaceSources: "Source-linked answers",
+          workspaceTitle: "Lead Pastor Sermon Archive",
+          workspaceCopy: "Search with a lead-pastor bias, review cited answers, and use the curated topic browser to jump into commonly requested themes.",
           askArchive: "Ask the archive",
           askArchiveTitle: "Search by topic, scripture, or question",
           askArchiveCopy: "This build prioritizes sermons from 이혜진 담임목사 when sending your question to the archive.",
@@ -1695,6 +1700,11 @@
           confirmNewPassword: "새 비밀번호 확인",
           featuredSermon: "추천 설교",
           featuredCopy: "여기서 시작한 뒤 아래 관련 주제로 확장해 보세요.",
+          workspaceFocus: "담임목사 중심",
+          workspaceOfficial: "공식 아카이브 작업 공간",
+          workspaceSources: "출처 연결 응답",
+          workspaceTitle: "담임목사 설교 아카이브",
+          workspaceCopy: "담임목사 설교를 우선 반영해 검색하고, 출처가 연결된 답변을 확인하며, 자주 찾는 주제별 설교로 바로 이동할 수 있습니다.",
           askArchive: "아카이브에 묻기",
           askArchiveTitle: "주제, 성경구절, 질문으로 검색",
           askArchiveCopy: "이 빌드는 질문을 보낼 때 이혜진 담임목사 설교를 우선적으로 반영합니다.",
@@ -1799,144 +1809,162 @@
     const CURATED_TOPICS = {
       prayer: {
         label: "Prayer",
-        summary: "Lead-pastor teachings on how to pray, what to pray for, and prayer joined to obedience.",
+        summary: {
+          en: "Lead-pastor teachings on how to pray, what to pray for, and prayer joined to obedience.",
+          ko: "어떻게 기도해야 하는지, 무엇을 위해 기도해야 하는지, 그리고 순종과 연결된 기도를 다루는 담임목사 설교 모음입니다."
+        },
         sermons: [
           {
             title: "Then How?",
-            detail: "Prayer teaching · Lead Pastor",
-            note: "How Jesus taught prayer through the Lord's Prayer.",
+            detail: { en: "Prayer teaching · Lead Pastor", ko: "기도 설교 · 담임목사" },
+            note: { en: "How Jesus taught prayer through the Lord's Prayer.", ko: "주기도문을 통해 예수님께서 기도를 어떻게 가르치셨는지 다룹니다." },
             videoId: "nECdyKUtHkE"
           },
           {
             title: "Then for What?",
-            detail: "Prayer teaching · Lead Pastor",
-            note: "What kinds of prayers please God and what prayer should pursue.",
+            detail: { en: "Prayer teaching · Lead Pastor", ko: "기도 설교 · 담임목사" },
+            note: { en: "What kinds of prayers please God and what prayer should pursue.", ko: "하나님이 기뻐하시는 기도의 방향과 기도가 추구해야 할 내용을 다룹니다." },
             videoId: "VflsYSSjhcQ"
           },
           {
             title: "Prayed and Obeyed",
-            detail: "Prayer teaching · Lead Pastor",
-            note: "Prayer joined to obedience, not just desire.",
+            detail: { en: "Prayer teaching · Lead Pastor", ko: "기도 설교 · 담임목사" },
+            note: { en: "Prayer joined to obedience, not just desire.", ko: "기도가 바람에 그치지 않고 순종과 연결되어야 함을 다룹니다." },
             videoId: "LjgPFOPDx3g"
           }
         ]
       },
       wisdom: {
         label: "Wisdom",
-        summary: "Curated teachings from the Proverbs series and related wisdom themes.",
+        summary: {
+          en: "Curated teachings from the Proverbs series and related wisdom themes.",
+          ko: "잠언 시리즈와 지혜 주제를 중심으로 모은 설교입니다."
+        },
         sermons: [
           {
             title: "가장 지혜로운 기도",
-            detail: "Proverbs series · Lead Pastor",
-            note: "Wisdom and prayer held together.",
+            detail: { en: "Proverbs series · Lead Pastor", ko: "잠언 시리즈 · 담임목사" },
+            note: { en: "Wisdom and prayer held together.", ko: "지혜와 기도가 어떻게 함께 가는지 다룹니다." },
             videoId: "gTyAG-i7VCE"
           },
           {
             title: "지혜와 명철과 지식의 원천은 한 분입니다",
-            detail: "Proverbs series · Lead Pastor",
-            note: "The source of wisdom, understanding, and knowledge.",
+            detail: { en: "Proverbs series · Lead Pastor", ko: "잠언 시리즈 · 담임목사" },
+            note: { en: "The source of wisdom, understanding, and knowledge.", ko: "지혜와 명철과 지식의 근원이 누구인지 설명합니다." },
             videoId: "hIdgcKSTx5E"
           },
           {
             title: "세상에 없는 하나님의 지혜",
-            detail: "Teaching clip · Lead Pastor",
-            note: "Wisdom that does not come from the world.",
+            detail: { en: "Teaching clip · Lead Pastor", ko: "설교 클립 · 담임목사" },
+            note: { en: "Wisdom that does not come from the world.", ko: "세상에서 나오지 않는 하나님의 지혜를 다룹니다." },
             videoId: "HX2WaQgaQBk"
           }
         ]
       },
       grace: {
         label: "Grace",
-        summary: "Grace, surrender, and the shape of Christian obedience in the lead pastor archive.",
+        summary: {
+          en: "Grace, surrender, and the shape of Christian obedience in the lead pastor archive.",
+          ko: "은혜, 순복, 그리고 그리스도인의 순종이 어떤 모습이어야 하는지 다루는 설교 모음입니다."
+        },
         sermons: [
           {
             title: "은혜의 대홍수를 사모합니다",
-            detail: "Genesis series · Lead Pastor",
-            note: "Noah's flood reframed through grace and salvation.",
+            detail: { en: "Genesis series · Lead Pastor", ko: "창세기 시리즈 · 담임목사" },
+            note: { en: "Noah's flood reframed through grace and salvation.", ko: "노아의 홍수를 은혜와 구원의 시선으로 다시 해석합니다." },
             videoId: "FoqTl82_AOU"
           },
           {
             title: "압도적인 은혜가 임하면",
-            detail: "Teaching clip · Lead Pastor",
-            note: "A concise teaching on overwhelming grace.",
+            detail: { en: "Teaching clip · Lead Pastor", ko: "설교 클립 · 담임목사" },
+            note: { en: "A concise teaching on overwhelming grace.", ko: "압도적인 은혜를 짧고 선명하게 다루는 설교입니다." },
             videoId: "v_jf-kHpnHM"
           },
           {
             title: "웃시야(아사랴)-인생 전반전과 후반전이 완전히 달랐던 사람",
-            detail: "Kings series · Lead Pastor",
-            note: "Grace, warning, and the danger of pride late in life.",
+            detail: { en: "Kings series · Lead Pastor", ko: "열왕기 시리즈 · 담임목사" },
+            note: { en: "Grace, warning, and the danger of pride late in life.", ko: "은혜와 경고, 그리고 인생 후반부의 교만이 얼마나 위험한지 다룹니다." },
             videoId: "Ksh-KMrC3hc"
           }
         ]
       },
       church: {
         label: "Church",
-        summary: "Messages on church health, discipleship, and the difference between appearance and transformation.",
+        summary: {
+          en: "Messages on church health, discipleship, and the difference between appearance and transformation.",
+          ko: "교회 건강, 제자도, 그리고 겉모습과 실제 변화의 차이를 다루는 설교입니다."
+        },
         sermons: [
           {
             title: "무엇을 주목할 것인가",
-            detail: "Kings series · Lead Pastor",
-            note: "What the people of God should pay attention to in seasons of instability.",
+            detail: { en: "Kings series · Lead Pastor", ko: "열왕기 시리즈 · 담임목사" },
+            note: { en: "What the people of God should pay attention to in seasons of instability.", ko: "불안정한 시기에 하나님의 백성이 무엇을 주목해야 하는지 다룹니다." },
             videoId: "aw2RDDL_BxQ"
           },
           {
             title: "그 날 바람이 불 때",
-            detail: "Genesis series · Lead Pastor",
-            note: "God's pursuit of people after the fall and what that means for gathered life.",
+            detail: { en: "Genesis series · Lead Pastor", ko: "창세기 시리즈 · 담임목사" },
+            note: { en: "God's pursuit of people after the fall and what that means for gathered life.", ko: "타락 이후에도 사람을 찾으시는 하나님과 그것이 공동체 삶에 주는 의미를 다룹니다." },
             videoId: "OP9dNZj2E2k"
           },
           {
             title: "유혹에 관하여",
-            detail: "Genesis series · Lead Pastor",
-            note: "How temptation distorts God's design for his people.",
+            detail: { en: "Genesis series · Lead Pastor", ko: "창세기 시리즈 · 담임목사" },
+            note: { en: "How temptation distorts God's design for his people.", ko: "유혹이 하나님의 질서를 어떻게 왜곡하는지 설명합니다." },
             videoId: "UXHtWX39Seo"
           }
         ]
       },
       faith: {
         label: "Faith",
-        summary: "Questions of biblical trust, miracles, and belief grounded in Scripture.",
+        summary: {
+          en: "Questions of biblical trust, miracles, and belief grounded in Scripture.",
+          ko: "성경에 근거한 신뢰, 기적, 믿음의 질문을 다루는 설교입니다."
+        },
         sermons: [
           {
             title: "Why Here?",
-            detail: "New year prayer series · Lead Pastor",
-            note: "Why believers gather before God and what faith expects from his presence.",
+            detail: { en: "New year prayer series · Lead Pastor", ko: "신년 기도 시리즈 · 담임목사" },
+            note: { en: "Why believers gather before God and what faith expects from his presence.", ko: "왜 성도들이 하나님 앞에 모이며 믿음이 그 임재에 무엇을 기대하는지 다룹니다." },
             videoId: "jNHreMhDimA"
           },
           {
             title: "성전수리보다 더 중요했던 일",
-            detail: "Kings series · Lead Pastor",
-            note: "Faithfulness that goes deeper than external repair.",
+            detail: { en: "Kings series · Lead Pastor", ko: "열왕기 시리즈 · 담임목사" },
+            note: { en: "Faithfulness that goes deeper than external repair.", ko: "겉으로 보이는 수리보다 더 깊은 충성이 무엇인지 다룹니다." },
             videoId: "K0f1N154w0Q"
           },
           {
             title: "요아스가 놓쳤던 5가지",
-            detail: "Kings series · Lead Pastor",
-            note: "A faith audit of what can be missed even in outward reform.",
+            detail: { en: "Kings series · Lead Pastor", ko: "열왕기 시리즈 · 담임목사" },
+            note: { en: "A faith audit of what can be missed even in outward reform.", ko: "겉으로는 개혁처럼 보여도 놓칠 수 있는 믿음의 지점을 점검합니다." },
             videoId: "M5xpUh8YKtg"
           }
         ]
       },
       culture: {
         label: "Culture",
-        summary: "Teachings that connect Christian formation with broader cultural questions.",
+        summary: {
+          en: "Teachings that connect Christian formation with broader cultural questions.",
+          ko: "그리스도인의 형성과 더 넓은 문화적 질문을 연결해 주는 설교입니다."
+        },
         sermons: [
           {
             title: "세상에 없는 하나님의 지혜",
-            detail: "Proverbs series · Lead Pastor",
-            note: "Wisdom that resists the world's patterns and values.",
+            detail: { en: "Proverbs series · Lead Pastor", ko: "잠언 시리즈 · 담임목사" },
+            note: { en: "Wisdom that resists the world's patterns and values.", ko: "세상의 방식과 가치관을 거스르는 하나님의 지혜를 다룹니다." },
             videoId: "HX2WaQgaQBk"
           },
           {
             title: "그 날 바람이 불 때",
-            detail: "Genesis series · Lead Pastor",
-            note: "How life east of Eden shapes the human world and its instincts.",
+            detail: { en: "Genesis series · Lead Pastor", ko: "창세기 시리즈 · 담임목사" },
+            note: { en: "How life east of Eden shapes the human world and its instincts.", ko: "에덴 동쪽의 삶이 인간 세계와 본능을 어떻게 형성하는지 다룹니다." },
             videoId: "OP9dNZj2E2k"
           },
           {
             title: "유혹에 관하여",
-            detail: "Genesis series · Lead Pastor",
-            note: "A biblical answer to how culture bends desire and truth.",
+            detail: { en: "Genesis series · Lead Pastor", ko: "창세기 시리즈 · 담임목사" },
+            note: { en: "A biblical answer to how culture bends desire and truth.", ko: "문화가 욕망과 진실을 어떻게 비트는지에 대한 성경적 답을 제시합니다." },
             videoId: "UXHtWX39Seo"
           }
         ]
@@ -1966,6 +1994,13 @@
 
     function topicLabel(key) {
       return text(`topicLabels.${key}`);
+    }
+
+    function localizedValue(value) {
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        return value[currentLanguage] || value.en || value.ko || "";
+      }
+      return value || "";
     }
 
     function setStatus(messageKey, loading = false) {
@@ -2034,6 +2069,11 @@
       $("featured-kicker").textContent = text("labels.featuredSermon");
       $("featured-copy").textContent = text("labels.featuredCopy");
       $("featured-btn").textContent = text("buttons.watchFeatured");
+      $("meta-pill-focus").textContent = text("labels.workspaceFocus");
+      $("meta-pill-workspace").textContent = text("labels.workspaceOfficial");
+      $("meta-pill-sources").textContent = text("labels.workspaceSources");
+      $("workspace-title").textContent = text("labels.workspaceTitle");
+      $("workspace-copy").textContent = text("labels.workspaceCopy");
       $("query-kicker").textContent = text("labels.askArchive");
       $("query-title").textContent = text("labels.askArchiveTitle");
       $("query-copy").textContent = text("labels.askArchiveCopy");
@@ -2243,16 +2283,21 @@
       visible.forEach((entry) => {
         const videoId = entry.sermon_id || extractVideoId(entry.youtube_url || "");
         const thumb = videoId ? youtubeThumb(videoId) : "";
+        const entryTitle = entry.title || (currentLanguage === "ko" ? "제목 없는 설교" : "Untitled sermon");
+        const openLabel = currentLanguage === "ko"
+          ? `${entryTitle} 열기`
+          : `Open ${entryTitle}`;
+        const thumbAlt = `${entryTitle} ${text("messages.sourceThumb")}`;
         const card = document.createElement("article");
         card.className = "catalog-card";
         card.innerHTML = `
           <div class="catalog-top">
-            <a class="media-thumb" href="${escapeAttribute(entry.youtube_url || "#")}" target="_blank" rel="noopener noreferrer" aria-label="Open ${escapeHtml(entry.title || "sermon")}">
-              ${thumb ? `<img src="${thumb}" alt="${escapeHtml(entry.title || "sermon")} thumbnail">` : ""}
+            <a class="media-thumb" href="${escapeAttribute(entry.youtube_url || "#")}" target="_blank" rel="noopener noreferrer" aria-label="${escapeAttribute(openLabel)}">
+              ${thumb ? `<img src="${thumb}" alt="${escapeAttribute(thumbAlt)}">` : ""}
             </a>
             <div class="catalog-content">
               <span class="source-meta">${escapeHtml(text("messages.indexedSermon"))}</span>
-              <h3>${escapeHtml(entry.title || "Untitled sermon")}</h3>
+              <h3>${escapeHtml(entryTitle)}</h3>
               <p class="catalog-meta-line">${escapeHtml(formatCatalogMeta(entry) || text("messages.metadataUnavailable"))}</p>
               <p class="catalog-note">${escapeHtml(entry.description || text("messages.transcriptReady"))}</p>
               <div class="catalog-tags">
@@ -2338,27 +2383,35 @@
     function renderTopicCards(topicKey) {
       const topic = CURATED_TOPICS[topicKey];
       const container = $("topic-card-list");
+      const topicSummary = localizedValue(topic.summary);
 
       $("topic-summary").innerHTML = `
         <strong>${topicLabel(topicKey)}</strong>
-        <p>${topic.summary}</p>
+        <p>${escapeHtml(topicSummary)}</p>
       `;
 
       container.innerHTML = "";
 
       topic.sermons.forEach((sermon) => {
+        const title = localizedValue(sermon.title);
+        const detail = localizedValue(sermon.detail);
+        const note = localizedValue(sermon.note);
+        const openLabel = currentLanguage === "ko"
+          ? `${title} 열기`
+          : `Open ${title}`;
+        const thumbAlt = `${title} ${text("messages.sourceThumb")}`;
         const card = document.createElement("article");
         card.className = "topic-card";
         card.innerHTML = `
           <div class="media-card">
-            <a class="media-thumb" href="${youtubeUrl(sermon.videoId)}" target="_blank" rel="noopener noreferrer" aria-label="Open ${escapeHtml(sermon.title)}">
-              <img src="${youtubeThumb(sermon.videoId)}" alt="${escapeHtml(sermon.title)} thumbnail">
+            <a class="media-thumb" href="${youtubeUrl(sermon.videoId)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeAttribute(openLabel)}">
+              <img src="${youtubeThumb(sermon.videoId)}" alt="${escapeAttribute(thumbAlt)}">
             </a>
             <div class="media-content">
               <span class="topic-badge">${escapeHtml(topicLabel(topicKey))}</span>
-              <h3>${escapeHtml(sermon.title)}</h3>
-              <p>${escapeHtml(sermon.detail)}</p>
-              <p style="margin-top:8px;">${escapeHtml(sermon.note)}</p>
+              <h3>${escapeHtml(title)}</h3>
+              <p>${escapeHtml(detail)}</p>
+              <p style="margin-top:8px;">${escapeHtml(note)}</p>
             </div>
           </div>
           <div class="feature-actions">
@@ -2411,18 +2464,24 @@
       sources.forEach((source, index) => {
         const videoId = extractVideoId(source.youtube_url);
         const thumb = videoId ? youtubeThumb(videoId) : "";
+        const sourceTitle = source.title || (currentLanguage === "ko" ? "제목 없는 설교" : "Untitled sermon");
+        const openLabel = currentLanguage === "ko"
+          ? `${sourceTitle} 열기`
+          : `Open ${sourceTitle}`;
+        const thumbAlt = `${sourceTitle} ${text("messages.sourceThumb")}`;
+        const sourceDate = source.date || text("messages.metadataUnavailable");
         const card = document.createElement("article");
         card.className = "source-card";
 
         card.innerHTML = `
           <div class="media-card">
-            <a class="media-thumb" href="${escapeAttribute(source.youtube_url || "#")}" target="_blank" rel="noopener noreferrer" aria-label="Open source sermon ${index + 1}">
-              ${thumb ? `<img src="${thumb}" alt="${escapeHtml(source.title || `Source ${index + 1}`)} thumbnail">` : ""}
+            <a class="media-thumb" href="${escapeAttribute(source.youtube_url || "#")}" target="_blank" rel="noopener noreferrer" aria-label="${escapeAttribute(openLabel)}">
+              ${thumb ? `<img src="${thumb}" alt="${escapeAttribute(thumbAlt)}">` : ""}
             </a>
             <div class="source-content">
               <span class="source-meta">${escapeHtml(text("messages.source"))} ${index + 1}</span>
-              <h3>${escapeHtml(source.title || "Untitled sermon")}</h3>
-              <p>${escapeHtml(source.date || "Date unavailable")}</p>
+              <h3>${escapeHtml(sourceTitle)}</h3>
+              <p>${escapeHtml(sourceDate)}</p>
             </div>
           </div>
           <div class="feature-actions">
