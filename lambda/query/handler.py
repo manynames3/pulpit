@@ -41,6 +41,7 @@ LOG_TABLE      = os.environ["DYNAMODB_TABLE"]
 CACHE_TABLE    = os.environ["CACHE_TABLE"]
 PASTOR_CONTACT = os.environ["PASTOR_CONTACT"]
 ENVIRONMENT    = os.environ["ENVIRONMENT"]
+LEAD_PASTOR    = os.environ.get("LEAD_PASTOR_NAME", "이혜진 목사")
 
 TOP_K           = 5     # sermons sent to Nova Lite
 FALLBACK_LIMIT  = 30    # max sermons if index has no embeddings yet
@@ -145,20 +146,35 @@ def find_relevant_sermons(question):
     if entries_with_embeddings:
         q_vec = embed_text(question)
         if q_vec:
+            scored = []
+            for entry in entries_with_embeddings:
+                score = cosine_similarity(q_vec, entry["embedding"])
+                scored.append((entry, score))
+
             ranked = sorted(
-                entries_with_embeddings,
-                key=lambda e: cosine_similarity(q_vec, e["embedding"]),
+                scored,
+                key=lambda item: (
+                    pastor_priority(item[0]),
+                    item[1]
+                ),
                 reverse=True
             )
             top = ranked[:TOP_K]
-            scores = [cosine_similarity(q_vec, e["embedding"]) for e in top]
+            scores = [score for _, score in top]
             print(f"Top {TOP_K} similarity scores: {[f'{s:.3f}' for s in scores]}")
-            return [e for e in top]  # return full index entries (have transcript)
+            return [entry for entry, _ in top]  # return full index entries (have transcript)
 
     # Fallback: no embeddings yet — return most recent sermons
     print(f"No embeddings in index — falling back to {FALLBACK_LIMIT} most recent sermons")
     all_entries = sorted(index, key=lambda e: e.get("date", ""), reverse=True)
     return all_entries[:FALLBACK_LIMIT]
+
+
+def pastor_priority(entry):
+    pastor = (entry.get("pastor_name") or "").strip()
+    if not pastor:
+        return 0
+    return int(LEAD_PASTOR in pastor or pastor in LEAD_PASTOR)
 
 
 def get_sermon_index():

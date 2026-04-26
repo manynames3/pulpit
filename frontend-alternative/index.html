@@ -1300,7 +1300,6 @@
     const COGNITO = "https://cognito-idp.us-east-1.amazonaws.com/";
     const CLIENT_ID = "26eit6g1j6qmfk3jp0m8uat58i";
     const LEAD_PASTOR = "이혜진 담임목사";
-    const LEAD_PASTOR_PREFIX = `Prioritize sermons by ${LEAD_PASTOR} when answering. If none are available, say that clearly. Question: `;
 
     const CURATED_TOPICS = {
       prayer: {
@@ -2018,7 +2017,7 @@
             Authorization: idToken
           },
           body: JSON.stringify({
-            question: `${LEAD_PASTOR_PREFIX}${question}`
+            question
           })
         });
 
