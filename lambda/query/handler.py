@@ -75,6 +75,12 @@ _index_loaded_at = None
 
 def lambda_handler(event, context):
     try:
+        http_method = event.get("httpMethod", "")
+        resource    = event.get("resource", "")
+
+        if http_method == "GET" and resource == "/catalog":
+            return response(200, build_catalog_response())
+
         body        = json.loads(event.get("body", "{}"))
         question    = body.get("question", "").strip()
         claims      = event.get("requestContext", {}).get("authorizer", {}).get("claims", {})
@@ -366,6 +372,28 @@ def build_sermon_context(entries):
         lines.append(f"Transcript:\n{transcript}\n")
 
     return "\n".join(lines)
+
+
+def build_catalog_response():
+    index = get_sermon_index()
+    sermons = sorted(index, key=lambda e: e.get("date", ""), reverse=True)
+
+    return {
+        "sermon_count": len(sermons),
+        "sermons": [
+            {
+                "sermon_id":            entry.get("sermon_id", ""),
+                "title":                entry.get("title", ""),
+                "date":                 entry.get("date", ""),
+                "youtube_url":          entry.get("youtube_url", ""),
+                "pastor_name":          entry.get("pastor_name", ""),
+                "description":          entry.get("description", ""),
+                "topics":               entry.get("topics", []),
+                "scripture_references": entry.get("scripture_references", [])
+            }
+            for entry in sermons
+        ]
+    }
 
 
 # ── BEDROCK ────────────────────────────────────────────────────────────────

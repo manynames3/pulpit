@@ -671,13 +671,118 @@
     }
 
     .topic-card-list,
+    .catalog-grid,
     .sources-list,
     .history-list {
       display: grid;
       gap: 12px;
     }
 
+    .catalog-panel {
+      padding: 26px;
+      margin-bottom: 20px;
+    }
+
+    .catalog-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 16px;
+      margin-bottom: 18px;
+      flex-wrap: wrap;
+    }
+
+    .catalog-toolbar .workspace-copy {
+      margin-bottom: 0;
+    }
+
+    .catalog-search {
+      min-width: min(320px, 100%);
+      max-width: 420px;
+    }
+
+    .catalog-meta {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 12px;
+      border-radius: 999px;
+      background: var(--bg-soft);
+      border: 1px solid rgba(16, 45, 116, 0.08);
+      color: var(--ink-soft);
+      font-size: 0.8rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .catalog-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .catalog-card {
+      display: grid;
+      gap: 14px;
+      padding: 16px;
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(16, 45, 116, 0.08);
+      background: #fffdfa;
+    }
+
+    .catalog-top {
+      display: grid;
+      grid-template-columns: 156px minmax(0, 1fr);
+      gap: 14px;
+      align-items: start;
+    }
+
+    .catalog-content h3 {
+      color: var(--ink);
+      font-size: 1.02rem;
+      line-height: 1.35;
+      margin-bottom: 8px;
+    }
+
+    .catalog-meta-line {
+      color: var(--text-soft);
+      font-size: 0.9rem;
+      line-height: 1.6;
+      margin-bottom: 8px;
+    }
+
+    .catalog-note {
+      color: var(--text-soft);
+      font-size: 0.9rem;
+      line-height: 1.64;
+      margin-bottom: 10px;
+    }
+
+    .catalog-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .catalog-tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: var(--bg-soft);
+      border: 1px solid rgba(16, 45, 116, 0.08);
+      color: var(--ink-soft);
+      font-size: 0.76rem;
+      font-weight: 700;
+    }
+
+    .catalog-footer {
+      display: flex;
+      justify-content: center;
+      margin-top: 18px;
+    }
+
     .topic-card,
+    .catalog-card,
     .source-card,
     .history-item {
       display: grid;
@@ -888,7 +993,8 @@
       .landing-grid,
       .workspace-intro,
       .workspace-columns,
-      .workspace-tips {
+      .workspace-tips,
+      .catalog-grid {
         grid-template-columns: 1fr;
       }
 
@@ -940,6 +1046,7 @@
       .popular-topics-panel,
       .workspace-panel,
       .topic-panel,
+      .catalog-panel,
       .answer-panel,
       .sources-panel,
       .history-panel {
@@ -974,6 +1081,10 @@
         gap: 10px;
         padding-top: 0;
         padding-bottom: 20px;
+      }
+
+      .catalog-top {
+        grid-template-columns: 1fr;
       }
 
       .hero-support-card {
@@ -1296,6 +1407,34 @@
         </div>
       </div>
 
+      <section class="catalog-panel panel">
+        <div class="catalog-toolbar">
+          <div>
+            <div class="section-kicker">Indexed Archive</div>
+            <h2 class="section-title">Browse ingested sermons</h2>
+            <p class="workspace-copy">This list reflects the actual indexed sermon archive behind search. Filter by title, topic, scripture, or pastor.</p>
+          </div>
+          <div class="catalog-search">
+            <label class="field">
+              <span>Filter Sermons</span>
+              <input id="catalog-search" type="search" autocomplete="off" placeholder="Search title, topic, scripture, or pastor">
+            </label>
+          </div>
+        </div>
+
+        <div class="panel-head">
+          <div class="catalog-meta" id="catalog-count">Loading indexed sermons</div>
+        </div>
+
+        <div class="catalog-grid" id="catalog-list">
+          <p class="empty-state">Loading indexed sermons.</p>
+        </div>
+
+        <div class="catalog-footer">
+          <button class="btn btn-secondary hidden" id="catalog-more-btn" type="button">Load More Sermons</button>
+        </div>
+      </section>
+
       <section class="history-panel">
         <div class="panel-head">
           <div>
@@ -1313,6 +1452,7 @@
 
   <script>
     const API_URL = "https://6nlf91miid.execute-api.us-east-1.amazonaws.com/dev/query";
+    const CATALOG_URL = "https://6nlf91miid.execute-api.us-east-1.amazonaws.com/dev/catalog";
     const COGNITO = "https://cognito-idp.us-east-1.amazonaws.com/";
     const CLIENT_ID = "26eit6g1j6qmfk3jp0m8uat58i";
     const LEAD_PASTOR = "이혜진 담임목사";
@@ -1471,6 +1611,10 @@
     let resetEmail = "";
     let activeTopic = "prayer";
     let searchLoadingTimer = null;
+    let catalogEntries = [];
+    let filteredCatalogEntries = [];
+    let catalogVisibleCount = 12;
+    let catalogLoaded = false;
 
     const $ = (id) => document.getElementById(id);
 
@@ -1558,6 +1702,11 @@
       $("question-input").focus();
       renderTopicTabs();
       renderTopicCards(activeTopic);
+      if (!catalogLoaded) {
+        loadCatalog();
+      } else {
+        applyCatalogFilter();
+      }
     }
 
     function showLanding() {
@@ -1585,6 +1734,114 @@
 
     function youtubeThumb(videoId) {
       return `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+    }
+
+    function formatCatalogMeta(entry) {
+      const parts = [];
+      if (entry.date) {
+        parts.push(entry.date);
+      }
+      if (entry.pastor_name) {
+        parts.push(entry.pastor_name);
+      }
+      return parts.join(" · ");
+    }
+
+    function buildCatalogSearchText(entry) {
+      return [
+        entry.title,
+        entry.pastor_name,
+        ...(entry.topics || []),
+        ...(entry.scripture_references || []),
+        entry.description
+      ].join(" ").toLowerCase();
+    }
+
+    function renderCatalog() {
+      const list = $("catalog-list");
+      const count = $("catalog-count");
+      const moreButton = $("catalog-more-btn");
+
+      count.textContent = `${filteredCatalogEntries.length} indexed sermon${filteredCatalogEntries.length === 1 ? "" : "s"}`;
+
+      if (!filteredCatalogEntries.length) {
+        list.innerHTML = '<p class="empty-state">No indexed sermons matched that filter.</p>';
+        moreButton.classList.add("hidden");
+        return;
+      }
+
+      const visible = filteredCatalogEntries.slice(0, catalogVisibleCount);
+      list.innerHTML = "";
+
+      visible.forEach((entry) => {
+        const videoId = entry.sermon_id || extractVideoId(entry.youtube_url || "");
+        const thumb = videoId ? youtubeThumb(videoId) : "";
+        const card = document.createElement("article");
+        card.className = "catalog-card";
+        card.innerHTML = `
+          <div class="catalog-top">
+            <a class="media-thumb" href="${escapeAttribute(entry.youtube_url || "#")}" target="_blank" rel="noopener noreferrer" aria-label="Open ${escapeHtml(entry.title || "sermon")}">
+              ${thumb ? `<img src="${thumb}" alt="${escapeHtml(entry.title || "sermon")} thumbnail">` : ""}
+            </a>
+            <div class="catalog-content">
+              <span class="source-meta">Indexed Sermon</span>
+              <h3>${escapeHtml(entry.title || "Untitled sermon")}</h3>
+              <p class="catalog-meta-line">${escapeHtml(formatCatalogMeta(entry) || "Metadata unavailable")}</p>
+              <p class="catalog-note">${escapeHtml(entry.description || "Transcript indexed and ready for archive search.")}</p>
+              <div class="catalog-tags">
+                ${(entry.scripture_references || []).slice(0, 2).map((ref) => `<span class="catalog-tag">${escapeHtml(ref)}</span>`).join("")}
+                ${(entry.topics || []).slice(0, 2).map((topic) => `<span class="catalog-tag">${escapeHtml(topic)}</span>`).join("")}
+              </div>
+            </div>
+          </div>
+          <div class="feature-actions">
+            <a class="btn btn-secondary" href="${escapeAttribute(entry.youtube_url || "#")}" target="_blank" rel="noopener noreferrer">Watch Sermon</a>
+          </div>
+        `;
+        list.appendChild(card);
+      });
+
+      moreButton.classList.toggle("hidden", visible.length >= filteredCatalogEntries.length);
+    }
+
+    function applyCatalogFilter() {
+      const query = $("catalog-search").value.trim().toLowerCase();
+      filteredCatalogEntries = query
+        ? catalogEntries.filter((entry) => buildCatalogSearchText(entry).includes(query))
+        : [...catalogEntries];
+      catalogVisibleCount = 12;
+      renderCatalog();
+    }
+
+    async function loadCatalog() {
+      const list = $("catalog-list");
+      const count = $("catalog-count");
+      list.innerHTML = '<p class="empty-state">Loading indexed sermons.</p>';
+      count.textContent = "Loading indexed sermons";
+
+      try {
+        const response = await fetch(CATALOG_URL, {
+          method: "GET",
+          headers: {
+            Authorization: idToken
+          }
+        });
+
+        if (response.status === 401) {
+          sessionStorage.removeItem("pulpit_token");
+          idToken = null;
+          showLanding();
+          return;
+        }
+
+        const data = await response.json();
+        catalogEntries = (data.sermons || []).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+        catalogLoaded = true;
+        applyCatalogFilter();
+      } catch (error) {
+        list.innerHTML = `<p class="empty-state">Could not load the indexed archive: ${escapeHtml(error.message)}</p>`;
+        count.textContent = "Catalog unavailable";
+      }
     }
 
     function renderTopicTabs() {
@@ -2125,6 +2382,11 @@
       $("search-btn").addEventListener("click", doQuery);
       $("clear-btn").addEventListener("click", clearWorkspace);
       $("logout-btn").addEventListener("click", logout);
+      $("catalog-search").addEventListener("input", applyCatalogFilter);
+      $("catalog-more-btn").addEventListener("click", () => {
+        catalogVisibleCount += 12;
+        renderCatalog();
+      });
 
       $("password-input").addEventListener("keydown", (event) => {
         if (event.key === "Enter") {
