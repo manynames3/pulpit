@@ -45,12 +45,14 @@ from rebuild_index import rebuild_index
 #
 # Optional:
 #   - PULPIT_YEAR_FILTER (default: current year)
+#   - PULPIT_YEAR_FILTERS (comma-separated exact years for backlog runs, e.g. 2026,2025,2024)
 #   - AWS_REGION (default: us-east-1)
 #
 BUCKET = os.environ["PULPIT_TRANSCRIPT_BUCKET"]
 CHANNEL_ID = os.environ["PULPIT_YOUTUBE_CHANNEL_ID"]
 API_KEY = os.environ["PULPIT_YOUTUBE_API_KEY"]
 YEAR_FILTER = int(os.environ.get("PULPIT_YEAR_FILTER", str(datetime.now().year)))
+YEAR_FILTERS_ENV = os.environ.get("PULPIT_YEAR_FILTERS", "").strip()
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 
 # Throttle controls to avoid YouTube IP blocks.
@@ -74,15 +76,33 @@ print(f"Bucket:   {BUCKET}")
 print("─" * 60)
 
 
-def get_videos():
+def parse_year_filters():
+    if YEAR_FILTERS_ENV:
+        years = []
+        for raw_value in YEAR_FILTERS_ENV.split(","):
+            value = raw_value.strip()
+            if not value:
+                continue
+            years.append(int(value))
+        return years or [YEAR_FILTER]
+    return [YEAR_FILTER]
+
+
+YEAR_FILTERS = parse_year_filters()
+
+
+def get_videos_for_year(target_year):
     """
-    Fetch all 2026+ videos using the uploads playlist API.
+    Fetch all videos for one exact calendar year using the uploads playlist API.
 
     Why not search API: YouTube search returns ~4 results for this
     channel regardless of maxResults. Known API limitation.
 
     Uploads playlist returns all videos reliably with pagination.
-    Stops as soon as a pre-YEAR_FILTER video is encountered.
+    Because uploads are newest-first, we:
+      - skip videos newer than target_year
+      - collect videos in target_year
+      - stop once we encounter a video older than target_year
     """
     videos     = []
     page_token = None
@@ -112,10 +132,14 @@ def get_videos():
             snippet = item["snippet"]
             vid_id  = snippet["resourceId"]["videoId"]
             date    = snippet["publishedAt"][:10]
+            video_year = int(date[:4])
 
-            if int(date[:4]) < YEAR_FILTER:
+            if video_year < target_year:
                 hit_old = True
                 break
+
+            if video_year > target_year:
+                continue
 
             videos.append({
                 "id":           vid_id,
@@ -129,22 +153,22 @@ def get_videos():
         if hit_old or not next_page:
             break
 
-        print(f"  Page {page_num}: {len(videos)} videos so far...")
+        print(f"  Page {page_num} ({target_year}): {len(videos)} videos so far...")
         page_token = next_page
         page_num  += 1
 
     return videos
 
 
-def transcript_exists(video_id):
+def transcript_exists(video_id, target_year):
     try:
         # Stored as transcripts/<year>/<video_id>.json
-        s3.head_object(Bucket=BUCKET, Key=f"transcripts/{YEAR_FILTER}/{video_id}.json")
+        s3.head_object(Bucket=BUCKET, Key=f"transcripts/{target_year}/{video_id}.json")
         return True
     except Exception:
         # Also treat permanently skipped videos as "handled" so we don't retry forever.
         try:
-            s3.head_object(Bucket=BUCKET, Key=f"transcripts/{YEAR_FILTER}/skips/{video_id}.json")
+            s3.head_object(Bucket=BUCKET, Key=f"transcripts/{target_year}/skips/{video_id}.json")
             return True
         except Exception:
             return False
@@ -281,12 +305,12 @@ def looks_like_subtitles_disabled(err_msg: str) -> bool:
     return "subtitles are disabled" in (err_msg or "").lower()
 
 
-def mark_permanent_skip(video, reason: str):
+def mark_permanent_skip(video, reason: str, target_year):
     """
     Persist a "do not retry" marker in S3 for videos that will never yield a transcript
     (e.g., subtitles disabled). This prevents repeated transcript API calls on every run.
     """
-    key = f"transcripts/{YEAR_FILTER}/skips/{video['id']}.json"
+    key = f"transcripts/{target_year}/skips/{video['id']}.json"
     body = {
         "video_id": video["id"],
         "title": video.get("title", ""),
@@ -324,89 +348,97 @@ def store_sermon(video, transcript_text):
 
 
 # ── MAIN ──────────────────────────────────────────────────────────────────
-videos   = get_videos()
-print(f"Found {len(videos)} videos from {YEAR_FILTER}+\n")
+print(f"Year scope for this run: {', '.join(str(year) for year in YEAR_FILTERS)}")
 print(f"Max new ingests this run: {MAX_NEW_PER_RUN} (set PULPIT_MAX_NEW_PER_RUN to change)\n")
 
 ingested = []
-skipped  = []
-errors   = []
+skipped = []
+errors = []
 transcript_attempts = 0
+stopped_due_to_ip_block = False
 
 # How many consecutive already-ingested videos before we assume
 # we've caught up and stop iterating. Avoids re-walking the full
 # archive on every run (and burning transcript API quota).
 CONSECUTIVE_EXIST_STOP = int(os.environ.get("PULPIT_CONSECUTIVE_EXIST_STOP", "5"))
-consecutive_exists = 0
+skip_keywords = ["#shorts", "교회소식", "하이라이트", "간증 영상",
+                 "소풍", "수련회", "달란트", "Lock-In", "lock-in",
+                 "환영인사", "감사의 말씀ㅣ", "소개"]
 
-for video in videos:
-    vid   = video["id"]
-    title = video["title"][:55]
-    date  = video["published_at"][:10]
+for target_year in YEAR_FILTERS:
+    videos = get_videos_for_year(target_year)
+    print(f"Found {len(videos)} videos from {target_year}\n")
+    consecutive_exists = 0
 
-    if transcript_exists(vid):
-        print(f"  EXIST {date}  {title}")
-        skipped.append(vid)
-        consecutive_exists += 1
-        if consecutive_exists >= CONSECUTIVE_EXIST_STOP:
-            print(f"\n{CONSECUTIVE_EXIST_STOP} consecutive existing videos — archive is caught up. Stopping.")
-            break
-        continue
+    for video in videos:
+        vid = video["id"]
+        title = video["title"][:55]
+        date = video["published_at"][:10]
 
-    consecutive_exists = 0  # reset on any non-existing video
+        if transcript_exists(vid, target_year):
+            print(f"  EXIST {date}  {title}")
+            skipped.append(vid)
+            consecutive_exists += 1
+            if consecutive_exists >= CONSECUTIVE_EXIST_STOP:
+                print(f"\n{CONSECUTIVE_EXIST_STOP} consecutive existing videos in {target_year} — moving to the next year.")
+                break
+            continue
 
-    # Only ingest sermons by senior pastor 이혜진
-    if "이혜진" not in video["title"]:
-        print(f"  SKIP  {date}  {title} (not 이혜진 pastor)")
-        skipped.append(vid)
-        continue
+        consecutive_exists = 0  # reset on any non-existing video
 
-    # Skip videos that are clearly not sermons
-    # Shorts, announcements, highlights rarely have transcripts
-    skip_keywords = ["#shorts", "교회소식", "하이라이트", "간증 영상",
-                     "소풍", "수련회", "달란트", "Lock-In", "lock-in",
-                     "환영인사", "감사의 말씀ㅣ", "소개"]
-    if any(kw.lower() in title.lower() for kw in skip_keywords):
-        print(f"  SKIP  {date}  {title} (non-sermon)")
-        skipped.append(vid)
-        continue
+        # Only ingest sermons by senior pastor 이혜진
+        if "이혜진" not in video["title"]:
+            print(f"  SKIP  {date}  {title} (not 이혜진 pastor)")
+            skipped.append(vid)
+            continue
 
-    if transcript_attempts >= MAX_TRANSCRIPT_ATTEMPTS_PER_RUN:
-        print(f"\nReached PULPIT_MAX_TRANSCRIPT_ATTEMPTS={MAX_TRANSCRIPT_ATTEMPTS_PER_RUN}. Stopping to avoid IP blocks.")
-        break
+        # Skip videos that are clearly not sermons
+        # Shorts, announcements, highlights rarely have transcripts
+        if any(kw.lower() in title.lower() for kw in skip_keywords):
+            print(f"  SKIP  {date}  {title} (non-sermon)")
+            skipped.append(vid)
+            continue
 
-    transcript_text, err, transcript_source = fetch_transcript(vid)
-    transcript_attempts += 1
-
-    if not transcript_text:
-        if looks_like_ip_block(err):
-            print(f"  STOP  {date}  {title} (YouTube IP block detected)")
-            print(f"         → {err}")
-            print("         → Exiting early to avoid making the block worse. Try again later.")
+        if transcript_attempts >= MAX_TRANSCRIPT_ATTEMPTS_PER_RUN:
+            print(f"\nReached PULPIT_MAX_TRANSCRIPT_ATTEMPTS={MAX_TRANSCRIPT_ATTEMPTS_PER_RUN}. Stopping to avoid IP blocks.")
             break
 
-        if looks_like_subtitles_disabled(err):
-            mark_permanent_skip(video, err)
-            print(f"  SKIP  {date}  {title} (subtitles disabled — marked)")
+        transcript_text, err, transcript_source = fetch_transcript(vid)
+        transcript_attempts += 1
+
+        if not transcript_text:
+            if looks_like_ip_block(err):
+                print(f"  STOP  {date}  {title} (YouTube IP block detected)")
+                print(f"         → {err}")
+                print("         → Exiting early to avoid making the block worse. Try again later.")
+                stopped_due_to_ip_block = True
+                break
+
+            if looks_like_subtitles_disabled(err):
+                mark_permanent_skip(video, err, target_year)
+                print(f"  SKIP  {date}  {title} (subtitles disabled — marked)")
+                print(f"         → {err}")
+                skipped.append(vid)
+                time.sleep(SLEEP_BETWEEN_TRANSCRIPTS_SEC)
+                continue
+
+            # No transcript available is common; treat as a skip (with reason) not a fatal error.
+            print(f"  SKIP  {date}  {title} (no transcript)")
             print(f"         → {err}")
             skipped.append(vid)
             time.sleep(SLEEP_BETWEEN_TRANSCRIPTS_SEC)
             continue
 
-        # No transcript available is common; treat as a skip (with reason) not a fatal error.
-        print(f"  SKIP  {date}  {title} (no transcript)")
-        print(f"         → {err}")
-        skipped.append(vid)
-        time.sleep(SLEEP_BETWEEN_TRANSCRIPTS_SEC)
-        continue
+        store_sermon(video, transcript_text)
+        print(f"  ✅    {date}  {title} ({transcript_source})")
+        ingested.append(vid)
+        time.sleep(SLEEP_BETWEEN_TRANSCRIPTS_SEC)  # be polite to YouTube
 
-    store_sermon(video, transcript_text)
-    print(f"  ✅    {date}  {title} ({transcript_source})")
-    ingested.append(vid)
-    time.sleep(SLEEP_BETWEEN_TRANSCRIPTS_SEC)  # be polite to YouTube
+        if len(ingested) >= MAX_NEW_PER_RUN:
+            print(f"\nReached MAX_NEW_PER_RUN={MAX_NEW_PER_RUN}. Stopping (cron will continue next run).")
+            break
 
-    if len(ingested) >= MAX_NEW_PER_RUN:
-        print(f"\nReached MAX_NEW_PER_RUN={MAX_NEW_PER_RUN}. Stopping (cron will continue next run).")
+    if stopped_due_to_ip_block or transcript_attempts >= MAX_TRANSCRIPT_ATTEMPTS_PER_RUN or len(ingested) >= MAX_NEW_PER_RUN:
         break
 
 print("─" * 60)

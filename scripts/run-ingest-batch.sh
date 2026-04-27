@@ -31,12 +31,14 @@ case "$MODE" in
     export PULPIT_MAX_TRANSCRIPT_ATTEMPTS="${PULPIT_MAX_TRANSCRIPT_ATTEMPTS:-6}"
     export PULPIT_SLEEP_SEC="${PULPIT_SLEEP_SEC:-8}"
     export PULPIT_CONSECUTIVE_EXIST_STOP="${PULPIT_CONSECUTIVE_EXIST_STOP:-999999}"
+    export PULPIT_YEAR_FILTERS="${PULPIT_YEAR_FILTERS:-$(date +%Y),$(( $(date +%Y) - 1 )),$(( $(date +%Y) - 2 ))}"
     ;;
   steady)
     export PULPIT_MAX_NEW_PER_RUN="${PULPIT_MAX_NEW_PER_RUN:-2}"
     export PULPIT_MAX_TRANSCRIPT_ATTEMPTS="${PULPIT_MAX_TRANSCRIPT_ATTEMPTS:-4}"
     export PULPIT_SLEEP_SEC="${PULPIT_SLEEP_SEC:-10}"
     export PULPIT_CONSECUTIVE_EXIST_STOP="${PULPIT_CONSECUTIVE_EXIST_STOP:-5}"
+    unset PULPIT_YEAR_FILTERS
     ;;
   *)
     echo "Unknown mode: $MODE (use 'steady' or 'backlog')" >&2
@@ -62,6 +64,7 @@ log_file="$LOG_DIR/ingest-${MODE}-${timestamp}.log"
   echo "MAX_TRANSCRIPT_ATTEMPTS=$PULPIT_MAX_TRANSCRIPT_ATTEMPTS"
   echo "SLEEP_SEC=$PULPIT_SLEEP_SEC"
   echo "CONSECUTIVE_EXIST_STOP=$PULPIT_CONSECUTIVE_EXIST_STOP"
+  echo "YEAR_FILTERS=${PULPIT_YEAR_FILTERS:-${PULPIT_YEAR_FILTER:-}}"
   echo
   cd "$ROOT"
   python3 scripts/ingest-local.py
