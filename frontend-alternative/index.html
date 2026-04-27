@@ -114,18 +114,20 @@
     }
 
     .logo-box {
-      width: 124px;
-      min-width: 124px;
-      padding: 10px 8px;
+      width: 136px;
+      min-width: 136px;
+      padding: 8px;
       border-radius: 24px;
       background: var(--surface);
       border: 1px solid var(--line);
       box-shadow: var(--shadow-soft);
     }
 
-    .logo-box svg {
+    .logo-box img {
       width: 100%;
       height: auto;
+      border-radius: 18px;
+      object-fit: contain;
     }
 
     .eyebrow,
@@ -1214,9 +1216,9 @@
       }
 
       .logo-box {
-        width: 64px;
-        min-width: 64px;
-        padding: 6px 4px;
+        width: 86px;
+        min-width: 86px;
+        padding: 5px;
         border-radius: 18px;
       }
 
@@ -1297,17 +1299,7 @@
     <header class="top-header">
       <div class="top-brand">
         <div class="logo-box" aria-label="Atlanta Bethel Church logo">
-          <svg viewBox="0 0 190 220" role="img" aria-hidden="true">
-            <g fill="none" stroke="#1f57c5" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M95 9v34" />
-              <path d="M84 18h22" />
-              <path d="M40 115l55-68 55 68" />
-              <path d="M20 122l75-92 75 92" />
-            </g>
-            <text x="95" y="112" text-anchor="middle" fill="#1f57c5" font-size="54" font-family="Brush Script MT, Snell Roundhand, cursive">Bethel</text>
-            <text x="95" y="162" text-anchor="middle" fill="#1f57c5" font-size="21" font-family="Georgia, serif" letter-spacing="1.8">HOLINESS TO</text>
-            <text x="95" y="188" text-anchor="middle" fill="#1f57c5" font-size="21" font-family="Georgia, serif" letter-spacing="1.8">THE LORD</text>
-          </svg>
+          <img src="./assets/bethel-logo.jpeg" alt="Atlanta Bethel Church logo">
         </div>
         <div class="top-brand-copy">
           <strong>Atlanta Bethel Church</strong>
@@ -1344,7 +1336,7 @@
           <article class="hero-support-card">
             <div class="section-kicker" id="hero-focus-kicker">Archive Focus</div>
             <h2 id="hero-focus-title">이혜진 담임목사</h2>
-            <p id="hero-focus-copy">Built around the lead pastor archive first, with a tighter experience than the full public site.</p>
+            <p id="hero-focus-copy">A focused archive for Senior Pastor Rev. Hyejin Lee’s sermons, built for quick search and direct playback.</p>
           </article>
 
           <article class="hero-support-card">
@@ -1648,7 +1640,7 @@
           heroText: "Search the topic. Find the video. Apply the word.",
           archiveFocus: "Archive Focus",
           archiveFocusTitle: "이혜진 담임목사",
-          archiveFocusCopy: "Built around the lead pastor archive first, with a tighter experience than the full public site.",
+          archiveFocusCopy: "A focused archive for Senior Pastor Rev. Hyejin Lee’s sermons, built for quick search and direct playback.",
           researchStyle: "Research Style",
           researchStyleTitle: "Cited + watchable",
           researchStyleCopy: "Search answers stay paired with sermon video links, not just generated text.",
@@ -1772,7 +1764,7 @@
         }
       },
       ko: {
-        title: "설교 아카이브 | 아틀란타 벧엘교회",
+        title: "설교 도서관 | 아틀란타 벧엘교회",
         status: {
           preparing: "아카이브 접속 준비 중",
           awaitingSignIn: "로그인 대기",
@@ -1791,12 +1783,12 @@
           connectionIssue: "연결 문제"
         },
         labels: {
-          heroTitle: "설교 아카이브",
+          heroTitle: "설교 도서관",
           heroLead: "목사님께서 그 주제를 설교하셨는지 찾고 싶으신가요?",
           heroText: "주제를 검색하고, 영상을 찾고, 말씀을 적용하세요.",
           archiveFocus: "아카이브 중심",
           archiveFocusTitle: "이혜진 담임목사",
-          archiveFocusCopy: "공개 홈페이지보다 더 집중된 방식으로 담임목사 설교 아카이브를 우선 구성했습니다.",
+          archiveFocusCopy: "담임목사 설교를 빠르게 찾고 바로 볼 수 있도록 구성한 집중형 아카이브입니다.",
           researchStyle: "검색 방식",
           researchStyleTitle: "근거 + 영상 확인",
           researchStyleCopy: "검색 결과는 생성된 답변만이 아니라 설교 영상 링크와 함께 제공됩니다.",
@@ -1804,8 +1796,8 @@
           commonUseTitle: "한 번의 클릭으로 주제 찾기",
           commonUseCopy: "기도, 은혜, 교회, 지혜, 믿음 같은 질문에서 바로 관련 영상으로 이동할 수 있습니다.",
           memberAccess: "멤버 접속",
-          authTitle: "로그인하여 아카이브 검색",
-          authCopy: "벧엘 계정으로 로그인하여 주제를 탐색하고, 설교 특정 장면을 보고, 개인 학습 도구를 이용하세요.",
+          authTitle: "로그인하여 도서관 검색",
+          authCopy: "계정을 만들거나 로그인을 하세요.",
           email: "이메일",
           password: "비밀번호",
           verificationCode: "인증 코드",
@@ -1818,7 +1810,7 @@
           workspaceFocus: "담임목사 중심",
           workspaceOfficial: "공식 아카이브 작업 공간",
           workspaceSources: "출처 연결 응답",
-          workspaceTitle: "담임목사 설교 아카이브",
+          workspaceTitle: "담임목사 설교 도서관",
           workspaceCopy: "담임목사 설교를 우선 반영해 검색하고, 출처가 연결된 답변을 확인하며, 자주 찾는 주제별 설교로 바로 이동할 수 있습니다.",
           askArchive: "아카이브에 묻기",
           askArchiveTitle: "주제, 성경구절, 질문으로 검색",
@@ -1835,7 +1827,7 @@
           sourcesTitle: "연관 설교 영상",
           indexedArchive: "색인된 아카이브",
           indexedArchiveTitle: "수집된 설교 둘러보기",
-          indexedArchiveCopy: "이 목록은 실제 검색에 사용되는 설교 아카이브입니다. 제목, 주제, 성경구절, 목회자 기준으로 필터링할 수 있습니다.",
+          indexedArchiveCopy: "이 목록은 실제 검색에 사용되는 설교 도서관입니다. 제목, 주제, 성경구절, 목회자 기준으로 필터링할 수 있습니다.",
           filterSermons: "설교 필터",
           recentQuestions: "최근 질문",
           sessionHistory: "세션 기록",
@@ -1845,7 +1837,7 @@
           logIn: "로그인",
           createAccount: "계정 만들기",
           forgotPassword: "비밀번호를 잊으셨나요?",
-          enterArchive: "아카이브 입장",
+          enterArchive: "도서관 입장",
           backToLogin: "로그인으로 돌아가기",
           verifyAndEnter: "인증 후 입장",
           resendCode: "코드 다시 보내기",
