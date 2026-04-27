@@ -15,11 +15,19 @@ Usage:
 
 Requirements:
     pip3 install youtube-transcript-api requests boto3 --break-system-packages
+    brew install yt-dlp
 """
 
+import html
 import json
 import os
+import re
+import shutil
+import subprocess
+import tempfile
 import time
+from pathlib import Path
+
 import boto3
 import requests
 from datetime import datetime, timezone
@@ -144,9 +152,13 @@ def transcript_exists(video_id):
 
 def fetch_transcript(video_id):
     """
-    Try to fetch captions via youtube-transcript-api.
+    Try yt-dlp first, then fall back to youtube-transcript-api.
     Some videos legitimately have no transcripts available (disabled/unprocessed/etc).
     """
+    transcript_text, err = fetch_transcript_with_yt_dlp(video_id)
+    if transcript_text:
+        return transcript_text, None, "yt-dlp"
+
     try:
         tlist = api.list(video_id)
 
@@ -157,18 +169,112 @@ def fetch_transcript(video_id):
             transcript = next(iter(tlist))
 
         segments = transcript.fetch()
-        return " ".join([s.text for s in segments]), None
+        return " ".join([s.text for s in segments]), None, "youtube-transcript-api"
     except Exception as e:
         # Normalize message for logs (some exceptions stringify poorly / include newlines)
         msg = " ".join(str(e).split())
         if not msg:
             msg = e.__class__.__name__
-        return None, msg
+        return None, f"yt-dlp: {err} | transcript-api: {msg}" if err else msg, None
+
+
+def fetch_transcript_with_yt_dlp(video_id):
+    if not shutil.which("yt-dlp"):
+        return None, "yt-dlp not installed"
+
+    tmpdir = tempfile.mkdtemp(prefix="pulpit-subs-")
+    try:
+        output_template = os.path.join(tmpdir, "%(id)s.%(ext)s")
+        cmd = [
+            "yt-dlp",
+            "--skip-download",
+            "--write-subs",
+            "--write-auto-subs",
+            "--sub-langs", "ko.*,ko,en.*,en",
+            "--sub-format", "vtt",
+            "--output", output_template,
+            f"https://www.youtube.com/watch?v={video_id}",
+        ]
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+
+        for subtitle_file in choose_subtitle_files(tmpdir, video_id):
+            transcript_text = normalize_subtitle_file(subtitle_file)
+            if transcript_text:
+                return transcript_text, None
+
+        stderr = " ".join((result.stderr or "").split())
+        stdout = " ".join((result.stdout or "").split())
+        return None, stderr or stdout or f"yt-dlp exited with code {result.returncode}"
+    except subprocess.TimeoutExpired:
+        return None, "yt-dlp subtitle fetch timed out"
+    except Exception as e:
+        return None, f"yt-dlp error: {e}"
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def choose_subtitle_files(tmpdir, video_id):
+    files = [
+        path for path in Path(tmpdir).glob(f"{video_id}*")
+        if path.suffix.lower() in {".vtt", ".srt", ".ttml", ".srv3", ".json3"}
+    ]
+
+    def priority(path):
+        name = path.name.lower()
+        lang_rank = 0 if ".ko" in name else 1 if ".en" in name else 2
+        auto_rank = 1 if "auto" in name else 0
+        ext_rank = {".vtt": 0, ".srt": 1, ".ttml": 2, ".srv3": 3, ".json3": 4}.get(path.suffix.lower(), 9)
+        return (lang_rank, auto_rank, ext_rank, name)
+
+    return sorted(files, key=priority)
+
+
+def normalize_subtitle_file(path: Path):
+    try:
+        raw = path.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return ""
+
+    lines = []
+    last_line = ""
+
+    for line in raw.splitlines():
+        text = line.strip()
+        if not text:
+            continue
+        if text == "WEBVTT" or text.startswith("Kind:") or text.startswith("Language:") or text.startswith("NOTE"):
+            continue
+        if re.match(r"^\d+$", text):
+            continue
+        if "-->" in text:
+            continue
+
+        text = re.sub(r"<[^>]+>", "", text)
+        text = re.sub(r"\{[^}]+\}", "", text)
+        text = html.unescape(text).strip()
+        if not text or text == last_line:
+            continue
+        lines.append(text)
+        last_line = text
+
+    return " ".join(lines).strip()
 
 
 def looks_like_ip_block(err_msg: str) -> bool:
     m = (err_msg or "").lower()
-    return "blocking requests from your ip" in m or "ipblockedexception" in m or "requestblocked" in m
+    return (
+        "blocking requests from your ip" in m
+        or "ipblockedexception" in m
+        or "requestblocked" in m
+        or "http error 429" in m
+        or "too many requests" in m
+    )
 
 
 def looks_like_subtitles_disabled(err_msg: str) -> bool:
@@ -269,7 +375,7 @@ for video in videos:
         print(f"\nReached PULPIT_MAX_TRANSCRIPT_ATTEMPTS={MAX_TRANSCRIPT_ATTEMPTS_PER_RUN}. Stopping to avoid IP blocks.")
         break
 
-    transcript_text, err = fetch_transcript(vid)
+    transcript_text, err, transcript_source = fetch_transcript(vid)
     transcript_attempts += 1
 
     if not transcript_text:
@@ -295,7 +401,7 @@ for video in videos:
         continue
 
     store_sermon(video, transcript_text)
-    print(f"  ✅    {date}  {title}")
+    print(f"  ✅    {date}  {title} ({transcript_source})")
     ingested.append(vid)
     time.sleep(SLEEP_BETWEEN_TRANSCRIPTS_SEC)  # be polite to YouTube
 
