@@ -980,6 +980,35 @@
       margin-bottom: 6px;
     }
 
+    .answer-inline-source .source-content h3 {
+      margin-bottom: 10px;
+      font-size: 1rem;
+      line-height: 1.45;
+    }
+
+    .answer-inline-source .source-content h3 a {
+      color: var(--ink);
+      text-decoration: none;
+    }
+
+    .answer-inline-source .source-content h3 a:hover {
+      text-decoration: underline;
+      text-decoration-color: rgba(16, 45, 116, 0.38);
+      text-underline-offset: 0.16em;
+    }
+
+    .answer-inline-source .source-link-row {
+      margin-top: 10px;
+    }
+
+    .answer-inline-source .source-link-row a {
+      color: var(--ink);
+      font-size: 0.88rem;
+      font-weight: 800;
+      text-decoration: underline;
+      text-underline-offset: 0.16em;
+    }
+
     .answer-body strong {
       color: var(--ink);
       font-weight: 800;
@@ -2557,7 +2586,6 @@
           ? `${sourceTitle} 열기`
           : `Open ${sourceTitle}`;
         const thumbAlt = `${sourceTitle} ${text("messages.sourceThumb")}`;
-        const sourceDate = source.date || text("messages.metadataUnavailable");
         const card = document.createElement("article");
         card.className = "source-card";
 
@@ -2569,7 +2597,6 @@
             <div class="source-content">
               <span class="source-meta">${escapeHtml(text("messages.source"))} ${index + 1}</span>
               <h3>${escapeHtml(sourceTitle)}</h3>
-              <p>${escapeHtml(sourceDate)}</p>
             </div>
           </div>
           <div class="feature-actions">
@@ -3044,13 +3071,14 @@
       }
 
       const sourceTitle = source.title || (currentLanguage === "ko" ? "제목 없는 설교" : "Untitled sermon");
-      const sourceDate = source.date || text("messages.metadataUnavailable");
       const videoId = extractVideoId(source.youtube_url);
       const thumb = videoId ? youtubeThumb(videoId) : "";
       const openLabel = currentLanguage === "ko"
         ? `${sourceTitle} 열기`
         : `Open ${sourceTitle}`;
       const thumbAlt = `${sourceTitle} ${text("messages.sourceThumb")}`;
+      const sourceLabel = currentLanguage === "ko" ? "원본 영상" : "Full Video";
+      const sourceAction = currentLanguage === "ko" ? "유튜브에서 보기" : "Watch on YouTube";
 
       return `
         <div class="answer-inline-source">
@@ -3059,8 +3087,11 @@
               ${thumb ? `<img src="${thumb}" alt="${escapeAttribute(thumbAlt)}">` : ""}
             </a>
             <div class="media-content">
-              <span class="source-meta">${escapeHtml(text("messages.source"))}</span>
-              <p style="margin-top:4px; color: var(--text-soft);">${escapeHtml(sourceDate)}</p>
+              <span class="source-meta">${escapeHtml(sourceLabel)}</span>
+              <h3><a href="${escapeAttribute(source.youtube_url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(sourceTitle)}</a></h3>
+              <div class="source-link-row">
+                <a href="${escapeAttribute(source.youtube_url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(sourceAction)}</a>
+              </div>
             </div>
           </div>
         </div>
