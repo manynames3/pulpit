@@ -7,6 +7,12 @@ Pulpit is a production-style retrieval application for searching a Korean-Englis
 
 **Live demo:** [https://pulpit.pages.dev](https://pulpit.pages.dev)
 
+## Key Outcomes
+
+- Built a production-style bilingual sermon search app with authenticated query, cited answers, and a live deployed frontend.
+- Kept runtime cost low by using a static frontend, serverless AWS backend, and an S3-backed hybrid search index instead of always-on search infrastructure.
+- Solved a real ingest constraint by moving transcript collection to a local runner when YouTube blocked cloud IP ranges.
+
 ## What I built
 
 - Static frontend deployed on Cloudflare Pages
