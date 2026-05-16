@@ -52,9 +52,18 @@ MIN_RELEVANCE_SCORE = 0.35
 EXPANDED_RELEVANCE_SCORE = 0.30
 MIN_HYBRID_SCORE = 0.28
 MIN_CHUNK_SEMANTIC_SCORE = 0.22
-RETRIEVAL_VERSION = "v6-chunk-hybrid-mention-gate-lang-inline-source-answer"
+RETRIEVAL_VERSION = "v7-chunk-hybrid-lexical-normalization-inline-source-answer"
 TOKEN_RE = re.compile(r"[0-9A-Za-z가-힣]+")
 ASCII_TERM_RE = re.compile(r"^[a-z0-9]+$")
+
+ENGLISH_LEXICAL_ALIASES = {
+    "fail": "fail",
+    "fails": "fail",
+    "failed": "fail",
+    "failing": "fail",
+    "failure": "fail",
+    "failures": "fail",
+}
 
 DEFAULT_RETRIEVAL_CONFIG = {
     "configKey": "retrieval",
@@ -472,10 +481,14 @@ def extract_literal_terms(question):
 
     for token in re.findall(r"[가-힣A-Za-z0-9]+", question.lower()):
         cleaned = token.strip()
-        if len(cleaned) < minimum_term_length(cleaned) or cleaned in seen:
+        if len(cleaned) < minimum_term_length(cleaned):
             continue
-        seen.add(cleaned)
-        terms.append(cleaned)
+
+        term = normalize_english_lexical_token(cleaned)
+        if term in seen:
+            continue
+        seen.add(term)
+        terms.append(term)
 
     return terms
 
@@ -525,7 +538,7 @@ def lexical_match_score(entry, terms, transcript_text=None):
 
 def tokenize(text):
     return [
-        token.lower()
+        normalize_english_lexical_token(token.lower())
         for token in TOKEN_RE.findall(text or "")
         if len(token) >= minimum_term_length(token)
     ]
@@ -537,8 +550,41 @@ def term_count(text, term):
     if not normalized:
         return 0
     if ASCII_TERM_RE.fullmatch(normalized):
-        return Counter(tokenize(text)).get(normalized, 0)
+        lexical_term = normalize_english_lexical_token(normalized)
+        return Counter(tokenize(text)).get(lexical_term, 0)
     return (text or "").lower().count(normalized)
+
+
+def normalize_english_lexical_token(token):
+    """Collapse common English word forms so exact lexical scoring is less brittle."""
+    if not ASCII_TERM_RE.fullmatch(token or ""):
+        return token
+
+    if token in ENGLISH_LEXICAL_ALIASES:
+        return ENGLISH_LEXICAL_ALIASES[token]
+
+    if len(token) > 5 and token.endswith("ies"):
+        return token[:-3] + "y"
+
+    if len(token) > 5 and token.endswith("ing"):
+        base = token[:-3]
+        if len(base) >= 3 and base[-1] == base[-2]:
+            base = base[:-1]
+        return base
+
+    if len(token) > 4 and token.endswith("ed"):
+        base = token[:-2]
+        if len(base) >= 3 and base[-1] == base[-2]:
+            base = base[:-1]
+        return base
+
+    if len(token) > 4 and token.endswith("es"):
+        return token[:-2]
+
+    if len(token) > 3 and token.endswith("s"):
+        return token[:-1]
+
+    return token
 
 
 def lexical_bonus(score):
