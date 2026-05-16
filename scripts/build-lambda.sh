@@ -1,12 +1,13 @@
 #!/bin/bash
-# Build Lambda deployment packages with dependencies.
-# All dependencies are now pure Python — no Docker needed.
+# Build Lambda deployment packages with dependencies for AWS Lambda.
 #
 # Usage: ./scripts/build-lambda.sh
 
 set -e
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
+LAMBDA_PLATFORM=${LAMBDA_PLATFORM:-manylinux2014_x86_64}
+LAMBDA_PYTHON_VERSION=${LAMBDA_PYTHON_VERSION:-3.12}
 
 build() {
   NAME=$1
@@ -17,25 +18,22 @@ build() {
   rm -rf "$PKG"
   mkdir -p "$PKG"
 
-  pip3 install -r "$SRC/requirements.txt" \
+  python3 -m pip install -r "$SRC/requirements.txt" \
     --target "$PKG" \
     --quiet \
     --upgrade \
-    --only-binary=:none: \
-    --no-deps
-
-  # Install deps individually to avoid pulling in compiled sub-deps
-  pip3 install -r "$SRC/requirements.txt" \
-    --target "$PKG" \
-    --quiet \
-    --upgrade
+    --platform "$LAMBDA_PLATFORM" \
+    --implementation cp \
+    --python-version "$LAMBDA_PYTHON_VERSION" \
+    --only-binary=:all:
 
   cp "$SRC/handler.py" "$PKG/"
-  echo "  ✅ $NAME ready"
+  echo "  $NAME ready"
 }
 
 build ingest
 build query
+build admin-trigger
 
 echo ""
 echo "Done. Run: terraform apply -var-file=environments/dev/terraform.tfvars"

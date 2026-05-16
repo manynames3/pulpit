@@ -21,7 +21,10 @@ import math
 import hashlib
 import re
 import boto3
+from collections import Counter
 from datetime import datetime, timezone
+
+from botocore.exceptions import ClientError
 
 s3       = boto3.client("s3")
 bedrock  = boto3.client("bedrock-runtime")
@@ -34,6 +37,8 @@ GUARDRAIL_ID   = os.environ["GUARDRAIL_ID"]
 GUARDRAIL_VER  = os.environ["GUARDRAIL_VERSION"]
 LOG_TABLE      = os.environ["DYNAMODB_TABLE"]
 CACHE_TABLE    = os.environ["CACHE_TABLE"]
+CONFIG_TABLE   = os.environ.get("CONFIG_TABLE")
+EVAL_TABLE     = os.environ.get("EVAL_TABLE")
 PASTOR_CONTACT = os.environ["PASTOR_CONTACT"]
 ENVIRONMENT    = os.environ["ENVIRONMENT"]
 LEAD_PASTOR    = os.environ.get("LEAD_PASTOR_NAME", "이혜진 목사")
@@ -48,6 +53,15 @@ EXPANDED_RELEVANCE_SCORE = 0.30
 MIN_HYBRID_SCORE = 0.28
 MIN_CHUNK_SEMANTIC_SCORE = 0.22
 RETRIEVAL_VERSION = "v6-chunk-hybrid-mention-gate-lang-inline-source-answer"
+TOKEN_RE = re.compile(r"[0-9A-Za-z가-힣]+")
+ASCII_TERM_RE = re.compile(r"^[a-z0-9]+$")
+
+DEFAULT_RETRIEVAL_CONFIG = {
+    "configKey": "retrieval",
+    "version": "default",
+    "preferredSermons": [],
+    "hiddenSermons": [],
+}
 
 STATIC_QUERY_VARIANTS = {
     "wilderness": ["광야"],
@@ -84,6 +98,8 @@ Rules you must always follow:
 # ── Lambda-global index cache (survives warm invocations) ──────────────────
 _sermon_index    = None   # list of index entries from index.json
 _index_loaded_at = None
+_retrieval_config = None
+_retrieval_config_loaded_at = None
 
 
 def lambda_handler(event, context):
@@ -115,13 +131,15 @@ def lambda_handler(event, context):
                 "crisis_redirect": True
             })
 
+        retrieval_config = get_retrieval_config()
+
         # 1. Cache check — identical questions cost nothing
-        cached = check_cache(question, preferred_language)
+        cached = check_cache(question, preferred_language, retrieval_config)
         if cached:
             return response(200, {**cached, "cached": True})
 
         # 2. Semantic search across full archive
-        sermons = find_relevant_sermons(question)
+        sermons = find_relevant_sermons(question, retrieval_config)
         if not sermons:
             return response(200, {
                 "answer": (
@@ -146,8 +164,9 @@ def lambda_handler(event, context):
             for e in sermons
         ]
         result = {"answer": answer, "sermons_searched": len(sermons), "sources": sources}
-        cache_answer(question, result, preferred_language)
+        cache_answer(question, result, preferred_language, retrieval_config)
         log_query(user_id, user_groups, question, answer)
+        log_retrieval_eval(user_id, question, answer, sermons, retrieval_config)
 
         return response(200, result)
 
@@ -159,24 +178,25 @@ def lambda_handler(event, context):
 
 # ── SEMANTIC SEARCH ────────────────────────────────────────────────────────
 
-def find_relevant_sermons(question):
+def find_relevant_sermons(question, retrieval_config=None):
     """Rank archive results and return top sermons with matched excerpts."""
-    index = get_sermon_index()
+    retrieval_config = retrieval_config or DEFAULT_RETRIEVAL_CONFIG
+    index = filter_hidden_sermons(get_sermon_index(), retrieval_config)
     if not index:
         return []
 
     if any(entry.get("chunks") for entry in index):
-        chunk_results = find_relevant_sermons_from_chunks(index, question)
+        chunk_results = find_relevant_sermons_from_chunks(index, question, retrieval_config)
         if chunk_results:
             return chunk_results
 
     entries_with_embeddings = [e for e in index if e.get("embedding")]
-    return find_relevant_sermons_by_sermon_embedding(index, entries_with_embeddings, question)
+    return find_relevant_sermons_by_sermon_embedding(index, entries_with_embeddings, question, retrieval_config)
 
 
-def find_relevant_sermons_by_sermon_embedding(index, entries_with_embeddings, question):
+def find_relevant_sermons_by_sermon_embedding(index, entries_with_embeddings, question, retrieval_config=None):
     if entries_with_embeddings:
-        ranked = rank_sermons(entries_with_embeddings, [question])
+        ranked = rank_sermons(entries_with_embeddings, [question], retrieval_config)
         if ranked:
             keyword_ranked = rerank_keyword_matches(ranked, question)
             if keyword_ranked:
@@ -194,7 +214,7 @@ def find_relevant_sermons_by_sermon_embedding(index, entries_with_embeddings, qu
             variants = filter_query_variants(index, expand_query_variants(question))
             if variants:
                 print(f"Retrying retrieval with variants: {variants}")
-                expanded_ranked = rank_sermons(entries_with_embeddings, variants)
+                expanded_ranked = rank_sermons(entries_with_embeddings, variants, retrieval_config)
                 if expanded_ranked:
                     expanded_top = expanded_ranked[:TOP_K]
                     expanded_scores = [score for _, score in expanded_top]
@@ -211,9 +231,9 @@ def find_relevant_sermons_by_sermon_embedding(index, entries_with_embeddings, qu
     return all_entries[:FALLBACK_LIMIT]
 
 
-def find_relevant_sermons_from_chunks(index, question):
+def find_relevant_sermons_from_chunks(index, question, retrieval_config=None):
     query_variants = build_query_bundle(index, question)
-    chunk_hits = rank_chunk_hits(index, query_variants, question)
+    chunk_hits = rank_chunk_hits(index, query_variants, question, retrieval_config)
     if not chunk_hits:
         return []
 
@@ -238,7 +258,7 @@ def find_relevant_sermons_from_chunks(index, question):
         print("Chunk retrieval below hybrid thresholds")
         return []
 
-    return collapse_chunk_hits_to_sermons(chunk_hits)
+    return collapse_chunk_hits_to_sermons(chunk_hits, retrieval_config)
 
 
 def pastor_priority(entry):
@@ -248,7 +268,18 @@ def pastor_priority(entry):
     return int(LEAD_PASTOR in pastor or pastor in LEAD_PASTOR)
 
 
-def rank_sermons(entries_with_embeddings, queries):
+def configured_priority(entry, retrieval_config=None):
+    preferred = set((retrieval_config or {}).get("preferredSermons") or [])
+    if not preferred:
+        return 0
+    return int(
+        entry.get("sermon_id") in preferred
+        or entry.get("title") in preferred
+        or entry.get("youtube_url") in preferred
+    )
+
+
+def rank_sermons(entries_with_embeddings, queries, retrieval_config=None):
     vectors = []
     for query in queries:
         vec = embed_text(query)
@@ -266,6 +297,7 @@ def rank_sermons(entries_with_embeddings, queries):
     return sorted(
         scored,
         key=lambda item: (
+            configured_priority(item[0], retrieval_config),
             pastor_priority(item[0]),
             item[1]
         ),
@@ -301,7 +333,7 @@ def static_query_variants(question):
     return matches
 
 
-def rank_chunk_hits(index, queries, question):
+def rank_chunk_hits(index, queries, question, retrieval_config=None):
     vectors = []
     for query in queries:
         vec = embed_text(query)
@@ -337,6 +369,7 @@ def rank_chunk_hits(index, queries, question):
 
     hits.sort(
         key=lambda item: (
+            configured_priority(item["entry"], retrieval_config),
             pastor_priority(item["entry"]),
             item["combined_score"],
             item["lexical_score"],
@@ -347,7 +380,7 @@ def rank_chunk_hits(index, queries, question):
     return hits[:CHUNK_TOP_K]
 
 
-def collapse_chunk_hits_to_sermons(chunk_hits):
+def collapse_chunk_hits_to_sermons(chunk_hits, retrieval_config=None):
     sermons = {}
 
     for hit in chunk_hits:
@@ -380,6 +413,7 @@ def collapse_chunk_hits_to_sermons(chunk_hits):
 
     results.sort(
         key=lambda item: (
+            configured_priority(item, retrieval_config),
             pastor_priority(item),
             item.get("match_score", 0),
             item.get("date", ""),
@@ -469,11 +503,11 @@ def lexical_match_score(entry, terms, transcript_text=None):
 
     score = 0
     for term in terms:
-        title_hits = title.count(term)
-        topic_hits = topics.count(term)
-        scripture_hits = scripture.count(term)
-        description_hits = description.count(term)
-        transcript_hits = transcript.count(term)
+        title_hits = term_count(title, term)
+        topic_hits = term_count(topics, term)
+        scripture_hits = term_count(scripture, term)
+        description_hits = term_count(description, term)
+        transcript_hits = term_count(transcript, term)
 
         if title_hits:
             score += 12 + min(title_hits, 3)
@@ -487,6 +521,24 @@ def lexical_match_score(entry, terms, transcript_text=None):
             score += min(transcript_hits, 12)
 
     return score
+
+
+def tokenize(text):
+    return [
+        token.lower()
+        for token in TOKEN_RE.findall(text or "")
+        if len(token) >= minimum_term_length(token)
+    ]
+
+
+def term_count(text, term):
+    """Use exact token matches for English; keep substring matching for Korean."""
+    normalized = (term or "").lower().strip()
+    if not normalized:
+        return 0
+    if ASCII_TERM_RE.fullmatch(normalized):
+        return Counter(tokenize(text)).get(normalized, 0)
+    return (text or "").lower().count(normalized)
 
 
 def lexical_bonus(score):
@@ -598,7 +650,7 @@ def get_sermon_index():
     try:
         raw    = s3.get_object(Bucket=BUCKET, Key="transcripts/index.json")
         data   = json.loads(raw["Body"].read())
-        _sermon_index    = data.get("sermons", [])
+        _sermon_index    = merge_external_chunk_index(data.get("sermons", []))
         _index_loaded_at = now
         print(f"Loaded index: {len(_sermon_index)} sermons, "
               f"generated {data.get('generated_at', 'unknown')}")
@@ -609,6 +661,105 @@ def get_sermon_index():
     except Exception as e:
         print(f"Error loading index: {e}")
         return []
+
+
+def merge_external_chunk_index(sermons):
+    """
+    Preserve compatibility with both index shapes:
+    - transcripts/index.json with inline sermon chunks
+    - indexes/chunk-index.json written by the serverless ingest pipeline
+    """
+    chunk_payload = load_optional_json("indexes/chunk-index.json")
+    chunks = chunk_payload.get("chunks", []) if isinstance(chunk_payload, dict) else []
+    if not chunks:
+        return sermons
+
+    chunks_by_sermon = {}
+    for chunk in chunks:
+        sermon_id = chunk.get("sermon_id")
+        if sermon_id:
+            chunks_by_sermon.setdefault(sermon_id, []).append(chunk)
+
+    if not chunks_by_sermon:
+        return sermons
+
+    merged = []
+    seen_sermon_ids = set()
+    for entry in sermons:
+        sermon_id = entry.get("sermon_id")
+        seen_sermon_ids.add(sermon_id)
+        external_chunks = chunks_by_sermon.get(sermon_id, [])
+        if external_chunks and not entry.get("chunks"):
+            entry = {**entry, "chunks": external_chunks}
+        merged.append(entry)
+
+    for sermon_id, external_chunks in chunks_by_sermon.items():
+        if sermon_id in seen_sermon_ids or not external_chunks:
+            continue
+        first = external_chunks[0]
+        merged.append({
+            "sermon_id": sermon_id,
+            "title": first.get("title", ""),
+            "date": first.get("date", ""),
+            "youtube_url": first.get("youtube_url", ""),
+            "pastor_name": first.get("pastor_name", ""),
+            "summary": first.get("summary", ""),
+            "topics": first.get("topics", []),
+            "key_themes": first.get("key_themes", []),
+            "scripture_references": first.get("scripture_references", []),
+            "related_questions": first.get("related_questions", []),
+            "transcript": " ".join(chunk.get("text", "") for chunk in external_chunks[:2])[:2000],
+            "embedding": first.get("embedding"),
+            "chunks": external_chunks,
+        })
+
+    print(f"Merged external chunk index: {sum(len(v) for v in chunks_by_sermon.values())} chunks")
+    return merged
+
+
+def load_optional_json(key):
+    try:
+        raw = s3.get_object(Bucket=BUCKET, Key=key)
+        return json.loads(raw["Body"].read())
+    except ClientError as exc:
+        code = exc.response.get("Error", {}).get("Code")
+        if code in {"NoSuchKey", "404", "NotFound"}:
+            return None
+        raise
+
+
+def get_retrieval_config():
+    global _retrieval_config, _retrieval_config_loaded_at
+    if not CONFIG_TABLE:
+        return DEFAULT_RETRIEVAL_CONFIG
+
+    now = datetime.now(timezone.utc)
+    if _retrieval_config is not None and _retrieval_config_loaded_at:
+        age = (now - _retrieval_config_loaded_at).total_seconds()
+        if age < INDEX_TTL_SEC:
+            return _retrieval_config
+
+    try:
+        table = dynamodb.Table(CONFIG_TABLE)
+        item = table.get_item(Key={"configKey": "retrieval"}).get("Item") or {}
+        _retrieval_config = {**DEFAULT_RETRIEVAL_CONFIG, **item}
+        _retrieval_config_loaded_at = now
+        return _retrieval_config
+    except Exception as e:
+        print(f"Retrieval config read error: {e}")
+        return DEFAULT_RETRIEVAL_CONFIG
+
+
+def filter_hidden_sermons(index, retrieval_config):
+    hidden = set((retrieval_config or {}).get("hiddenSermons") or [])
+    if not hidden:
+        return index
+    return [
+        entry for entry in index
+        if entry.get("sermon_id") not in hidden
+        and entry.get("title") not in hidden
+        and entry.get("youtube_url") not in hidden
+    ]
 
 
 def embed_text(text):
@@ -746,16 +897,20 @@ def normalize_language(value):
     return "ko" if str(value or "").strip().lower() == "ko" else "en"
 
 
-def question_hash(question, preferred_language="en"):
+def retrieval_config_version(retrieval_config=None):
+    return str((retrieval_config or {}).get("version", "default"))
+
+
+def question_hash(question, preferred_language="en", retrieval_config=None):
     normalized_language = normalize_language(preferred_language)
     key = f"{normalized_language}:{question.lower().strip()}"
     return hashlib.sha256(key.encode()).hexdigest()
 
 
-def check_cache(question, preferred_language="en"):
+def check_cache(question, preferred_language="en", retrieval_config=None):
     try:
         table = dynamodb.Table(CACHE_TABLE)
-        item  = table.get_item(Key={"questionHash": question_hash(question, preferred_language)}).get("Item")
+        item  = table.get_item(Key={"questionHash": question_hash(question, preferred_language, retrieval_config)}).get("Item")
         if item:
             if item.get("retrievalVersion") != RETRIEVAL_VERSION:
                 print("Cache miss: retrieval version changed")
@@ -782,18 +937,19 @@ def check_cache(question, preferred_language="en"):
     return None
 
 
-def cache_answer(question, result, preferred_language="en"):
+def cache_answer(question, result, preferred_language="en", retrieval_config=None):
     try:
         table = dynamodb.Table(CACHE_TABLE)
         now   = datetime.now(timezone.utc)
         table.put_item(Item={
-            "questionHash":     question_hash(question, preferred_language),
+            "questionHash":     question_hash(question, preferred_language, retrieval_config),
             "question":         question,
             "preferredLanguage": normalize_language(preferred_language),
             "answer":           result["answer"],
             "sermons_searched": result.get("sermons_searched", 0),
             "sources":          result.get("sources", []),
             "retrievalVersion": RETRIEVAL_VERSION,
+            "configVersion":    retrieval_config_version(retrieval_config),
             "cachedAt":         now.isoformat(),
             "expiresAt":        int(now.timestamp()) + (CACHE_TTL_DAYS * 86400)
         })
@@ -819,6 +975,39 @@ def log_query(user_id, user_groups, question, answer):
         })
     except Exception as e:
         print(f"Log error: {e}")
+
+
+def log_retrieval_eval(user_id, question, answer, sermons, retrieval_config):
+    if not EVAL_TABLE:
+        return
+
+    try:
+        table = dynamodb.Table(EVAL_TABLE)
+        now = datetime.now(timezone.utc)
+        top_matches = []
+
+        for sermon in sermons[:TOP_K]:
+            top_matches.append({
+                "sermon_id": sermon.get("sermon_id", ""),
+                "title": sermon.get("title", ""),
+                "date": sermon.get("date", ""),
+                "match_score": str(round(float(sermon.get("match_score", 0) or 0), 4)),
+                "matched_chunk_count": len(sermon.get("matched_chunks", [])),
+            })
+
+        table.put_item(Item={
+            "evalId": str(uuid.uuid4()),
+            "timestamp": now.isoformat(),
+            "userId": user_id,
+            "question": question,
+            "answerPreview": answer[:500],
+            "retrievalVersion": RETRIEVAL_VERSION,
+            "configVersion": str((retrieval_config or {}).get("version", "default")),
+            "topMatches": top_matches,
+            "expiresAt": int(now.timestamp()) + (90 * 86400),
+        })
+    except Exception as e:
+        print(f"Retrieval eval log error: {e}")
 
 
 # ── UTILS ──────────────────────────────────────────────────────────────────

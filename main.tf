@@ -20,10 +20,14 @@ module "ingestion" {
 # Re-enable when expanding to full archive and adding a vector store backend
 
 module "query" {
-  source            = "./modules/query"
-  environment       = var.environment
-  bedrock_model_id  = var.bedrock_model_id
-  transcript_bucket = module.ingestion.transcript_bucket_name
-  church_name       = var.church_name
-  pastor_contact    = var.pastor_contact
+  source             = "./modules/query"
+  environment        = var.environment
+  bedrock_model_id   = var.bedrock_model_id
+  transcript_bucket  = module.ingestion.transcript_bucket_name
+  ingest_lambda_arn  = module.ingestion.ingest_lambda_arn
+  ingest_lambda_name = module.ingestion.ingest_lambda_name
+  ingest_queue_arn   = module.ingestion.ingest_queue_arn
+  ingest_queue_url   = module.ingestion.ingest_queue_url
+  church_name        = var.church_name
+  pastor_contact     = var.pastor_contact
 }

@@ -1,7 +1,6 @@
 resource "aws_cognito_user_pool" "pulpit" {
-  name = "pulpit-${var.environment}"
-
   # Signup is email-based, so Cognito needs an email attribute to verify and recover accounts.
+  name                     = "pulpit-${var.environment}"
   auto_verified_attributes = ["email"]
 
   password_policy {

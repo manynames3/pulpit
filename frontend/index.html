@@ -206,6 +206,83 @@
     }
     .cmd-link:hover { color: var(--green-dim); border-color: var(--green-dim); }
 
+    .admin-panel {
+      display: none;
+      margin-top: 22px;
+      border: 1px solid var(--green-dark);
+      padding: 16px;
+      box-shadow: inset 0 0 18px rgba(0,255,65,0.04);
+    }
+
+    .admin-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 14px;
+    }
+
+    .admin-field label {
+      display: block;
+      color: var(--green-dim);
+      font-size: 10px;
+      letter-spacing: 2px;
+      margin-bottom: 6px;
+    }
+
+    .admin-field input {
+      width: 100%;
+      background: transparent;
+      border: 1px solid var(--green-dark);
+      color: var(--green);
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 13px;
+      padding: 8px;
+      outline: none;
+    }
+
+    .admin-field input:focus {
+      border-color: var(--green-dim);
+      box-shadow: 0 0 12px rgba(0,255,65,0.14);
+    }
+
+    .admin-check {
+      color: var(--green-dim);
+      font-size: 12px;
+      margin-top: 14px;
+    }
+
+    .admin-action {
+      background: transparent;
+      border: 1px solid var(--amber);
+      color: var(--amber);
+      cursor: pointer;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 12px;
+      letter-spacing: 2px;
+      margin-top: 14px;
+      padding: 10px 12px;
+      width: 100%;
+    }
+
+    .admin-action:disabled {
+      border-color: var(--green-dark);
+      color: var(--green-dark);
+      cursor: wait;
+    }
+
+    .admin-status {
+      color: var(--green-dim);
+      font-size: 12px;
+      line-height: 1.7;
+      margin-top: 12px;
+      min-height: 22px;
+      white-space: pre-wrap;
+    }
+
+    @media (max-width: 640px) {
+      .admin-grid { grid-template-columns: 1fr; }
+    }
+
     /* Error */
     .error-text { color: #ff4444; }
 
@@ -347,6 +424,46 @@
       [ ENTER TO SEARCH &nbsp;·&nbsp; SHIFT+ENTER FOR NEW LINE ]
       <span class="cmd-link" id="clear-btn">CLEAR</span>
       <span class="cmd-link" id="logout-btn">LOGOUT</span>
+      <span class="cmd-link" id="admin-btn" style="display:none;">ADMIN</span>
+    </div>
+
+    <div class="admin-panel" id="admin-panel">
+      <div class="response-label">&#9658; ADMIN INGEST CONTROL</div>
+      <div class="auth-note" style="margin-top:0;">
+        Staff-only manual trigger for the serverless ingest Lambda. This runs in AWS, so staff can
+        start a controlled archive ingest from any signed-in browser.
+      </div>
+
+      <div class="admin-grid">
+        <div class="admin-field">
+          <label for="admin-year">YEAR FILTER</label>
+          <input id="admin-year" type="number" value="2023" min="2020" max="2030">
+        </div>
+        <div class="admin-field">
+          <label for="admin-max-new">MAX NEW PER RUN</label>
+          <input id="admin-max-new" type="number" value="30" min="1" max="30">
+        </div>
+        <div class="admin-field">
+          <label for="admin-attempts">MAX TRANSCRIPT ATTEMPTS</label>
+          <input id="admin-attempts" type="number" value="30" min="1" max="40">
+        </div>
+        <div class="admin-field">
+          <label for="admin-sleep">SLEEP SECONDS</label>
+          <input id="admin-sleep" type="number" value="8" min="0" max="30" step="0.5">
+        </div>
+        <div class="admin-field">
+          <label for="admin-exist-stop">CONSECUTIVE EXISTING STOP</label>
+          <input id="admin-exist-stop" type="number" value="120" min="1" max="200">
+        </div>
+      </div>
+
+      <label class="admin-check">
+        <input id="admin-backfill" type="checkbox">
+        BACKFILL EXISTING SERMON METADATA + EMBEDDINGS
+      </label>
+
+      <button class="admin-action" id="run-ingest-btn">RUN INGEST NOW</button>
+      <div class="admin-status" id="admin-status"></div>
     </div>
 
     <div class="response-block" id="response-block" style="display:none">
@@ -368,6 +485,8 @@
 
 <script>
   const API_URL    = 'https://6nlf91miid.execute-api.us-east-1.amazonaws.com/dev/query';
+  const API_BASE   = API_URL.replace(/\/query$/, '');
+  const ADMIN_INGEST_URL = `${API_BASE}/admin/ingest/run`;
   const COGNITO    = 'https://cognito-idp.us-east-1.amazonaws.com/';
   const CLIENT_ID  = '26eit6g1j6qmfk3jp0m8uat58i';
   const POOL_ID    = 'us-east-1_h9uVjOm3V';
@@ -665,6 +784,74 @@
       document.getElementById('sources-list').innerHTML = '';
       lastQuestion = '';
     });
+
+    if (isAdminUser()) {
+      document.getElementById('admin-btn').style.display = 'inline';
+    }
+    document.getElementById('admin-btn').addEventListener('click', toggleAdminPanel);
+    document.getElementById('run-ingest-btn').addEventListener('click', runManualIngest);
+  }
+
+  function toggleAdminPanel() {
+    const panel = document.getElementById('admin-panel');
+    panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
+  }
+
+  function isAdminUser() {
+    const claims = parseJwtClaims(idToken);
+    const groups = claims['cognito:groups'] || [];
+    return Array.isArray(groups) && (groups.includes('staff') || groups.includes('admin'));
+  }
+
+  function parseJwtClaims(token) {
+    if (!token || !token.includes('.')) return {};
+    try {
+      const payload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      return JSON.parse(atob(payload));
+    } catch (_) {
+      return {};
+    }
+  }
+
+  async function runManualIngest() {
+    const btn = document.getElementById('run-ingest-btn');
+    const status = document.getElementById('admin-status');
+    const payload = {
+      yearFilter: Number(document.getElementById('admin-year').value || 2023),
+      maxNewPerRun: Number(document.getElementById('admin-max-new').value || 30),
+      maxTranscriptAttempts: Number(document.getElementById('admin-attempts').value || 30),
+      sleepSec: Number(document.getElementById('admin-sleep').value || 8),
+      consecutiveExistStop: Number(document.getElementById('admin-exist-stop').value || 120),
+      backfill: document.getElementById('admin-backfill').checked
+    };
+
+    btn.disabled = true;
+    status.classList.remove('error-text');
+    status.textContent = 'QUEUEING INGEST LAMBDA...';
+    setStatus('QUEUEING INGEST', true);
+
+    try {
+      const res = await fetch(ADMIN_INGEST_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': idToken },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+
+      status.textContent =
+        `INGEST QUEUED\nDESTINATION: ${data.ingestQueue || data.ingestFunction || 'ingest queue'}\nREQUEST: ${data.queueMessageId || data.requestId || 'accepted'}`;
+      setStatus('INGEST QUEUED');
+    } catch (err) {
+      status.classList.add('error-text');
+      status.textContent = `ERROR: ${err.message}`;
+      setStatus('INGEST TRIGGER FAILED');
+    } finally {
+      btn.disabled = false;
+    }
   }
 
   async function doQuery() {
