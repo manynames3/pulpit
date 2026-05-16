@@ -540,28 +540,6 @@
       max-width: 62ch;
     }
 
-    .workspace-meta {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      margin-bottom: 12px;
-    }
-
-    .meta-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 9px 12px;
-      border-radius: 999px;
-      background: var(--surface);
-      border: 1px solid var(--line);
-      color: var(--ink-soft);
-      font-size: 0.75rem;
-      font-weight: 800;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-    }
-
     .workspace-columns {
       display: grid;
       grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
@@ -1571,11 +1549,6 @@
     <section class="workspace-shell" id="workspace-shell">
       <header class="workspace-header">
         <div>
-          <div class="workspace-meta">
-            <span class="meta-pill" id="meta-pill-focus">Lead Pastor Focus</span>
-            <span class="meta-pill" id="meta-pill-workspace">Official archive workspace</span>
-            <span class="meta-pill" id="meta-pill-sources">Source-linked answers</span>
-          </div>
           <h1 id="workspace-title">Lead Pastor Sermon Archive</h1>
           <p class="workspace-copy" id="workspace-copy">
             Search with a lead-pastor bias, review cited answers, and use the curated topic browser to jump into commonly requested themes.
@@ -1591,11 +1564,11 @@
         <article class="featured-sermon">
           <div>
             <div class="section-kicker" id="featured-kicker">Featured Sermon</div>
-            <h2>#2 “토후에서 토브로”</h2>
+            <h2>주일예배ㅣ간증설교 “하나님의 드라마” 시편 66편 16절 | 이혜진 목사 | 아틀란타 벧엘교회 온라인 예배 | 3/10/24</h2>
             <p id="featured-copy">Start here, then branch into related topic picks below.</p>
           </div>
           <div class="feature-actions">
-            <a class="btn btn-primary" id="featured-btn" href="https://www.youtube.com/watch?v=Be-rKfz0qAQ" target="_blank" rel="noopener noreferrer">Watch Featured Sermon</a>
+            <a class="btn btn-primary" id="featured-btn" href="https://www.youtube.com/watch?v=arYvc2kFr40" target="_blank" rel="noopener noreferrer">Watch Featured Sermon</a>
           </div>
         </article>
       </section>
@@ -1624,9 +1597,9 @@
             </div>
 
             <div class="prompt-row" aria-label="Suggested prompts">
-              <button class="prompt-chip" type="button" data-prompt="What has the lead pastor taught about prayer and surrender?">Prayer and surrender</button>
-              <button class="prompt-chip" type="button" data-prompt="What has the lead pastor said about wisdom in Proverbs?">Wisdom in Proverbs</button>
-              <button class="prompt-chip" type="button" data-prompt="What has the lead pastor taught about grace and obedience?">Grace and obedience</button>
+              <button class="prompt-chip" type="button" data-prompt="What sermons discuss 기도 (prayer)?">Prayer / 기도</button>
+              <button class="prompt-chip" type="button" data-prompt="What sermons discuss 은혜 (grace)?">Grace / 은혜</button>
+              <button class="prompt-chip" type="button" data-prompt="What sermons discuss 믿음 (faith)?">Faith / 믿음</button>
             </div>
           </section>
 
@@ -1792,9 +1765,6 @@
           confirmNewPassword: "Confirm New Password",
           featuredSermon: "Featured Sermon",
           featuredCopy: "Start here, then branch into related topic picks below.",
-          workspaceFocus: "Lead Pastor Focus",
-          workspaceOfficial: "Official archive workspace",
-          workspaceSources: "Source-linked answers",
           workspaceTitle: "Lead Pastor Sermon Archive",
           workspaceCopy: "Search with a lead-pastor bias, review cited answers, and use the curated topic browser to jump into commonly requested themes.",
           askArchive: "Ask the archive",
@@ -1859,9 +1829,9 @@
           reset: "Request a code first, then enter the code and your new password."
         },
         prompts: [
-          { label: "Prayer and surrender", value: "What has the lead pastor taught about prayer and surrender?" },
-          { label: "Wisdom in Proverbs", value: "What has the lead pastor said about wisdom in Proverbs?" },
-          { label: "Grace and obedience", value: "What has the lead pastor taught about grace and obedience?" }
+          { label: "Prayer / 기도", value: "What sermons discuss 기도 (prayer)?" },
+          { label: "Grace / 은혜", value: "What sermons discuss 은혜 (grace)?" },
+          { label: "Faith / 믿음", value: "What sermons discuss 믿음 (faith)?" }
         ],
         topicLabels: {
           prayer: "Prayer",
@@ -1947,9 +1917,6 @@
           confirmNewPassword: "새 비밀번호 확인",
           featuredSermon: "추천 설교",
           featuredCopy: "여기서 시작한 뒤 아래 관련 주제로 확장해 보세요.",
-          workspaceFocus: "담임목사 중심",
-          workspaceOfficial: "공식 아카이브 작업 공간",
-          workspaceSources: "출처 연결 응답",
           workspaceTitle: "담임목사 설교 도서관",
           workspaceCopy: "담임목사 설교를 우선 반영해 검색하고, 출처가 연결된 답변을 확인하며, 자주 찾는 주제별 설교로 바로 이동할 수 있습니다.",
           askArchive: "아카이브에 묻기",
@@ -2014,9 +1981,9 @@
           reset: "먼저 코드를 요청한 뒤, 코드와 새 비밀번호를 입력하세요."
         },
         prompts: [
-          { label: "기도와 순복", value: "담임목사님께서 기도와 순복에 대해 어떻게 설교하셨나요?" },
-          { label: "잠언의 지혜", value: "담임목사님께서 잠언의 지혜에 대해 무엇이라고 설교하셨나요?" },
-          { label: "은혜와 순종", value: "담임목사님께서 은혜와 순종에 대해 어떻게 가르치셨나요?" }
+          { label: "기도", value: "기도에 대해 설교한 내용을 찾아줘." },
+          { label: "은혜", value: "은혜에 대해 설교한 내용을 찾아줘." },
+          { label: "믿음", value: "믿음에 대해 설교한 내용을 찾아줘." }
         ],
         topicLabels: {
           prayer: "기도",
@@ -2325,9 +2292,6 @@
       $("featured-kicker").textContent = text("labels.featuredSermon");
       $("featured-copy").textContent = text("labels.featuredCopy");
       $("featured-btn").textContent = text("buttons.watchFeatured");
-      $("meta-pill-focus").textContent = text("labels.workspaceFocus");
-      $("meta-pill-workspace").textContent = text("labels.workspaceOfficial");
-      $("meta-pill-sources").textContent = text("labels.workspaceSources");
       $("workspace-title").textContent = text("labels.workspaceTitle");
       $("workspace-copy").textContent = text("labels.workspaceCopy");
       $("query-kicker").textContent = text("labels.askArchive");
