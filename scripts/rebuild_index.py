@@ -38,6 +38,13 @@ def sha256_text(text):
     return hashlib.sha256((text or "").strip().encode("utf-8")).hexdigest()
 
 
+def safe_int(value):
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def embed_text(bedrock, text):
     payload = {
         "inputText": text[:MAX_EMBED_CHARS],
@@ -159,6 +166,8 @@ def build_sermon_entry(sermon, existing_entry, chunk_embedding_cache, bedrock):
             "chunk_hash": chunk_hash,
             "word_start": chunk["word_start"],
             "word_end": chunk["word_end"],
+            "duration": sermon.get("duration", ""),
+            "duration_seconds": safe_int(sermon.get("duration_seconds")),
             "text": chunk["text"],
             "embedding": chunk_embedding,
         })
@@ -168,6 +177,8 @@ def build_sermon_entry(sermon, existing_entry, chunk_embedding_cache, bedrock):
         "title": sermon.get("title", ""),
         "date": sermon.get("date", ""),
         "youtube_url": sermon.get("youtube_url", ""),
+        "duration": sermon.get("duration", ""),
+        "duration_seconds": safe_int(sermon.get("duration_seconds")),
         "description": sermon.get("description", ""),
         "pastor_name": sermon.get("pastor_name", ""),
         "scripture_references": sermon.get("scripture_references", []),

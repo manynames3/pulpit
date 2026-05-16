@@ -157,7 +157,50 @@ def get_videos_for_year(target_year):
         page_token = next_page
         page_num  += 1
 
+    return add_video_durations(videos)
+
+
+def add_video_durations(videos):
+    duration_by_video = get_video_durations([video["id"] for video in videos])
+    for video in videos:
+        video.update(duration_by_video.get(video["id"], {}))
     return videos
+
+
+def get_video_durations(video_ids):
+    durations = {}
+    unique_ids = [video_id for video_id in dict.fromkeys(video_ids) if video_id]
+
+    for start in range(0, len(unique_ids), 50):
+        batch = unique_ids[start:start + 50]
+        params = {
+            "part": "contentDetails",
+            "id": ",".join(batch),
+            "maxResults": 50,
+            "key": API_KEY,
+        }
+        resp = requests.get(
+            "https://www.googleapis.com/youtube/v3/videos",
+            params=params,
+            timeout=10,
+        )
+        resp.raise_for_status()
+        for item in resp.json().get("items", []):
+            duration = item.get("contentDetails", {}).get("duration", "")
+            durations[item["id"]] = {
+                "duration": duration,
+                "duration_seconds": parse_youtube_duration(duration),
+            }
+
+    return durations
+
+
+def parse_youtube_duration(duration):
+    match = re.fullmatch(r"P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", duration or "")
+    if not match:
+        return 0
+    days, hours, minutes, seconds = [int(value or 0) for value in match.groups()]
+    return days * 86400 + hours * 3600 + minutes * 60 + seconds
 
 
 def transcript_exists(video_id, target_year):
@@ -333,6 +376,8 @@ def store_sermon(video, transcript_text):
         "title":       video["title"],
         "date":        video["published_at"][:10],
         "youtube_url": f"https://youtube.com/watch?v={video['id']}",
+        "duration":    video.get("duration", ""),
+        "duration_seconds": int(video.get("duration_seconds") or 0),
         "description": video.get("description", "")[:500],
         "transcript":  transcript_text,
         "ingested_at": datetime.now(timezone.utc).isoformat()

@@ -751,6 +751,50 @@
       text-transform: uppercase;
     }
 
+    .archive-stats-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin: 4px 0 18px;
+    }
+
+    .archive-stat-card {
+      padding: 18px;
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(16, 45, 116, 0.09);
+      background:
+        linear-gradient(180deg, rgba(16, 45, 116, 0.045), rgba(255, 255, 255, 0.96)),
+        #fffdfa;
+      box-shadow: var(--shadow-soft);
+    }
+
+    .archive-stat-value {
+      display: block;
+      color: var(--ink);
+      font-family: var(--font-display);
+      font-size: clamp(2rem, 5vw, 3.2rem);
+      line-height: 0.95;
+      letter-spacing: -0.04em;
+      margin-bottom: 8px;
+    }
+
+    .archive-stat-label {
+      display: block;
+      color: var(--ink-soft);
+      font-size: 0.78rem;
+      font-weight: 900;
+      letter-spacing: 0.1em;
+      line-height: 1.4;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .archive-stat-note {
+      color: var(--text-soft);
+      font-size: 0.9rem;
+      line-height: 1.55;
+    }
+
     .catalog-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -1332,6 +1376,24 @@
         display: none;
       }
 
+      .archive-stats-grid {
+        grid-auto-flow: column;
+        grid-auto-columns: minmax(150px, 74vw);
+        grid-template-columns: none;
+        overflow-x: auto;
+        overscroll-behavior-x: contain;
+        scroll-snap-type: x proximity;
+        -webkit-overflow-scrolling: touch;
+      }
+
+      .archive-stats-grid::-webkit-scrollbar {
+        display: none;
+      }
+
+      .archive-stat-card {
+        scroll-snap-align: start;
+      }
+
       .featured-sermon {
         grid-template-columns: 1fr;
       }
@@ -1646,6 +1708,24 @@
           </div>
         </div>
 
+        <div class="archive-stats-grid" id="archive-stats-grid" aria-label="Archive statistics">
+          <article class="archive-stat-card">
+            <span class="archive-stat-value">--</span>
+            <span class="archive-stat-label">Indexed Videos</span>
+            <p class="archive-stat-note">Loading archive statistics.</p>
+          </article>
+          <article class="archive-stat-card">
+            <span class="archive-stat-value">--</span>
+            <span class="archive-stat-label">Video Hours</span>
+            <p class="archive-stat-note">Loading archive statistics.</p>
+          </article>
+          <article class="archive-stat-card">
+            <span class="archive-stat-value">--</span>
+            <span class="archive-stat-label">Archive Years</span>
+            <p class="archive-stat-note">Loading archive statistics.</p>
+          </article>
+        </div>
+
         <div class="panel-head">
           <div class="catalog-meta" id="catalog-count">Loading indexed sermons</div>
         </div>
@@ -1734,6 +1814,12 @@
           indexedArchiveTitle: "Browse ingested sermons",
           indexedArchiveCopy: "This list reflects the actual indexed sermon archive behind search. Filter by title, topic, scripture, or pastor.",
           filterSermons: "Filter Sermons",
+          statVideosLabel: "Indexed Videos",
+          statVideosNote: "Searchable sermons with transcripts and video links.",
+          statHoursLabel: "Video Hours",
+          statHoursNote: "Watchable teaching represented in the archive.",
+          statYearsLabel: "Archive Years",
+          statYearsNote: "Coverage currently available for search.",
           recentQuestions: "Recent Questions",
           sessionHistory: "Session history",
           sessionFooter: "Official archive workspace for Atlanta Bethel Church. This interface is intentionally narrower than the main website."
@@ -1806,6 +1892,7 @@
           catalogUnavailable: "Catalog unavailable",
           catalogErrorPrefix: "Could not load the indexed archive:",
           catalogNoMatches: "No indexed sermons matched that filter.",
+          statsLoading: "Loading archive statistics.",
           indexedSermon: "Indexed Sermon",
           metadataUnavailable: "Metadata unavailable",
           transcriptReady: "Transcript indexed and ready for archive search.",
@@ -1882,6 +1969,12 @@
           indexedArchiveTitle: "수집된 설교 둘러보기",
           indexedArchiveCopy: "이 목록은 실제 검색에 사용되는 설교 도서관입니다. 제목, 주제, 성경구절, 목회자 기준으로 필터링할 수 있습니다.",
           filterSermons: "설교 필터",
+          statVideosLabel: "색인된 영상",
+          statVideosNote: "전사본과 영상 링크가 연결된 검색 가능 설교입니다.",
+          statHoursLabel: "영상 시간",
+          statHoursNote: "아카이브에 담긴 설교 영상 분량입니다.",
+          statYearsLabel: "아카이브 연도",
+          statYearsNote: "현재 검색 가능한 설교 범위입니다.",
           recentQuestions: "최근 질문",
           sessionHistory: "세션 기록",
           sessionFooter: "아틀란타 벧엘교회를 위한 공식 아카이브 작업 공간입니다. 이 인터페이스는 메인 홈페이지보다 더 집중된 용도로 설계되었습니다."
@@ -1954,6 +2047,7 @@
           catalogUnavailable: "카탈로그를 불러올 수 없습니다",
           catalogErrorPrefix: "색인된 아카이브를 불러오지 못했습니다:",
           catalogNoMatches: "조건에 맞는 색인 설교가 없습니다.",
+          statsLoading: "아카이브 통계를 불러오는 중입니다.",
           indexedSermon: "색인 설교",
           metadataUnavailable: "메타데이터 없음",
           transcriptReady: "전사본이 색인되어 검색 준비가 완료되었습니다.",
@@ -2140,6 +2234,7 @@
     let searchLoadingTimer = null;
     let catalogEntries = [];
     let filteredCatalogEntries = [];
+    let catalogStats = null;
     let catalogVisibleCount = 12;
     let catalogLoaded = false;
     let currentLanguage = localStorage.getItem("pulpit_language") === "ko" ? "ko" : "en";
@@ -2294,6 +2389,7 @@
       setStatus(currentStatusKey, currentStatusLoading);
       renderTopicTabs();
       renderTopicCards(activeTopic);
+      renderArchiveStats();
       if (catalogLoaded) {
         renderCatalog();
       }
@@ -2402,10 +2498,102 @@
       return `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
     }
 
+    function safeNumber(value) {
+      const number = Number(value || 0);
+      return Number.isFinite(number) ? number : 0;
+    }
+
+    function localizedNumber(value, options = {}) {
+      const locale = currentLanguage === "ko" ? "ko-KR" : "en-US";
+      return new Intl.NumberFormat(locale, options).format(value);
+    }
+
+    function formatHoursStat(totalSeconds) {
+      const hours = totalSeconds / 3600;
+      const formatted = localizedNumber(hours, {
+        minimumFractionDigits: hours >= 100 ? 0 : 1,
+        maximumFractionDigits: 1
+      });
+      return currentLanguage === "ko" ? `${formatted}시간` : `${formatted} hr`;
+    }
+
+    function formatCatalogDuration(totalSeconds) {
+      const seconds = safeNumber(totalSeconds);
+      if (!seconds) {
+        return "";
+      }
+
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.round((seconds % 3600) / 60);
+      if (hours && minutes) {
+        return currentLanguage === "ko" ? `${hours}시간 ${minutes}분` : `${hours}h ${minutes}m`;
+      }
+      if (hours) {
+        return currentLanguage === "ko" ? `${hours}시간` : `${hours}h`;
+      }
+      return currentLanguage === "ko" ? `${minutes}분` : `${minutes}m`;
+    }
+
+    function buildFallbackArchiveStats(entries) {
+      const years = [...new Set(entries.map((entry) => (entry.date || "").slice(0, 4)).filter((year) => /^\d{4}$/.test(year)))].sort();
+      const totalDurationSeconds = entries.reduce((sum, entry) => sum + safeNumber(entry.duration_seconds), 0);
+      return {
+        video_count: entries.length,
+        sermon_count: entries.length,
+        total_duration_seconds: totalDurationSeconds,
+        year_start: years[0] || "",
+        year_end: years[years.length - 1] || ""
+      };
+    }
+
+    function formatYearRange(stats) {
+      const start = stats && stats.year_start ? String(stats.year_start) : "";
+      const end = stats && stats.year_end ? String(stats.year_end) : "";
+      if (start && end && start !== end) {
+        return `${start}-${end}`;
+      }
+      return start || end || "--";
+    }
+
+    function renderArchiveStats() {
+      const container = $("archive-stats-grid");
+      if (!container) {
+        return;
+      }
+
+      const stats = catalogStats || (catalogEntries.length ? buildFallbackArchiveStats(catalogEntries) : null);
+      const videoCount = stats ? safeNumber(stats.video_count || stats.sermon_count || catalogEntries.length) : 0;
+      const totalSeconds = stats
+        ? safeNumber(stats.total_duration_seconds) || safeNumber(stats.total_duration_hours) * 3600
+        : 0;
+
+      container.innerHTML = `
+        <article class="archive-stat-card">
+          <span class="archive-stat-value">${stats ? escapeHtml(localizedNumber(videoCount)) : "--"}</span>
+          <span class="archive-stat-label">${escapeHtml(text("labels.statVideosLabel"))}</span>
+          <p class="archive-stat-note">${escapeHtml(stats ? text("labels.statVideosNote") : text("messages.statsLoading"))}</p>
+        </article>
+        <article class="archive-stat-card">
+          <span class="archive-stat-value">${totalSeconds ? escapeHtml(formatHoursStat(totalSeconds)) : "--"}</span>
+          <span class="archive-stat-label">${escapeHtml(text("labels.statHoursLabel"))}</span>
+          <p class="archive-stat-note">${escapeHtml(stats ? text("labels.statHoursNote") : text("messages.statsLoading"))}</p>
+        </article>
+        <article class="archive-stat-card">
+          <span class="archive-stat-value">${escapeHtml(stats ? formatYearRange(stats) : "--")}</span>
+          <span class="archive-stat-label">${escapeHtml(text("labels.statYearsLabel"))}</span>
+          <p class="archive-stat-note">${escapeHtml(stats ? text("labels.statYearsNote") : text("messages.statsLoading"))}</p>
+        </article>
+      `;
+    }
+
     function formatCatalogMeta(entry) {
       const parts = [];
       if (entry.date) {
         parts.push(entry.date);
+      }
+      const duration = formatCatalogDuration(entry.duration_seconds);
+      if (duration) {
+        parts.push(duration);
       }
       if (entry.pastor_name) {
         parts.push(entry.pastor_name);
@@ -2427,10 +2615,19 @@
       const list = $("catalog-list");
       const count = $("catalog-count");
       const moreButton = $("catalog-more-btn");
+      const totalCatalogCount = safeNumber((catalogStats && (catalogStats.video_count || catalogStats.sermon_count)) || catalogEntries.length);
 
-      count.textContent = currentLanguage === "ko"
-        ? `색인된 설교 ${filteredCatalogEntries.length}개`
-        : `${filteredCatalogEntries.length} indexed sermon${filteredCatalogEntries.length === 1 ? "" : "s"}`;
+      if (filteredCatalogEntries.length !== catalogEntries.length) {
+        count.textContent = currentLanguage === "ko"
+          ? `${localizedNumber(filteredCatalogEntries.length)}개 표시 · 전체 ${localizedNumber(totalCatalogCount)}개`
+          : `${localizedNumber(filteredCatalogEntries.length)} shown · ${localizedNumber(totalCatalogCount)} indexed sermons`;
+      } else {
+        count.textContent = currentLanguage === "ko"
+          ? `색인된 설교 ${localizedNumber(totalCatalogCount)}개`
+          : `${localizedNumber(totalCatalogCount)} indexed sermon${totalCatalogCount === 1 ? "" : "s"}`;
+      }
+
+      renderArchiveStats();
 
       if (!filteredCatalogEntries.length) {
         list.innerHTML = `<p class="empty-state">${escapeHtml(text("messages.catalogNoMatches"))}</p>`;
@@ -2489,6 +2686,8 @@
     async function loadCatalog() {
       const list = $("catalog-list");
       const count = $("catalog-count");
+      catalogStats = null;
+      renderArchiveStats();
       list.innerHTML = `<p class="empty-state">${escapeHtml(text("messages.catalogLoadingBody"))}</p>`;
       count.textContent = text("messages.catalogLoading");
 
@@ -2509,9 +2708,12 @@
 
         const data = await response.json();
         catalogEntries = (data.sermons || []).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+        catalogStats = data.stats || buildFallbackArchiveStats(catalogEntries);
         catalogLoaded = true;
         applyCatalogFilter();
       } catch (error) {
+        catalogStats = null;
+        renderArchiveStats();
         list.innerHTML = `<p class="empty-state">${escapeHtml(text("messages.catalogErrorPrefix"))} ${escapeHtml(error.message)}</p>`;
         count.textContent = text("messages.catalogUnavailable");
       }

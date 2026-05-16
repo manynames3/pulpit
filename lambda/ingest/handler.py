@@ -8,6 +8,7 @@ the browser without local AWS credentials or a local machine.
 
 import json
 import os
+import re
 import time
 from datetime import datetime, timezone
 
@@ -206,7 +207,58 @@ def get_videos(api_key, year_filter):
 
         page_token = data.get("nextPageToken")
         if hit_old or not page_token:
-            return videos
+            return add_video_durations(api_key, videos)
+
+
+def add_video_durations(api_key, videos):
+    duration_by_video = get_video_durations(api_key, [video["id"] for video in videos])
+    for video in videos:
+        duration = duration_by_video.get(video["id"], {})
+        video.update(duration)
+    return videos
+
+
+def get_video_durations(api_key, video_ids):
+    durations = {}
+    unique_ids = [video_id for video_id in dict.fromkeys(video_ids) if video_id]
+
+    for start in range(0, len(unique_ids), 50):
+        batch = unique_ids[start:start + 50]
+        params = {
+            "part": "contentDetails",
+            "id": ",".join(batch),
+            "maxResults": 50,
+            "key": api_key,
+        }
+        resp = requests.get(
+            "https://www.googleapis.com/youtube/v3/videos",
+            params=params,
+            timeout=10,
+        )
+        resp.raise_for_status()
+        for item in resp.json().get("items", []):
+            duration_iso = item.get("contentDetails", {}).get("duration", "")
+            durations[item["id"]] = {
+                "duration": duration_iso,
+                "duration_seconds": parse_youtube_duration(duration_iso),
+            }
+
+    return durations
+
+
+def parse_youtube_duration(duration):
+    match = re.fullmatch(r"P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", duration or "")
+    if not match:
+        return 0
+    days, hours, minutes, seconds = [int(value or 0) for value in match.groups()]
+    return days * 86400 + hours * 3600 + minutes * 60 + seconds
+
+
+def safe_int(value):
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def fetch_transcript(video_id):
@@ -304,6 +356,8 @@ def store_sermon(video, transcript_text):
         "title": video["title"],
         "date": video["published_at"][:10],
         "youtube_url": f"https://youtube.com/watch?v={video['id']}",
+        "duration": video.get("duration", ""),
+        "duration_seconds": safe_int(video.get("duration_seconds")),
         "description": video.get("description", "")[:500],
         "transcript": transcript_text,
         "pastor_name": metadata.get("pastor_name", ""),
@@ -349,6 +403,8 @@ def build_sermon_card(sermon):
         "title": sermon.get("title", ""),
         "date": sermon.get("date", ""),
         "youtube_url": sermon.get("youtube_url", ""),
+        "duration": sermon.get("duration", ""),
+        "duration_seconds": safe_int(sermon.get("duration_seconds")),
         "pastor_name": sermon.get("pastor_name", ""),
         "summary": sermon.get("summary", ""),
         "topics": sermon.get("topics", []),
@@ -384,6 +440,8 @@ def build_chunks(sermon):
             "title": sermon.get("title", ""),
             "date": sermon.get("date", ""),
             "youtube_url": sermon.get("youtube_url", ""),
+            "duration": sermon.get("duration", ""),
+            "duration_seconds": safe_int(sermon.get("duration_seconds")),
             "pastor_name": sermon.get("pastor_name", ""),
             "topics": sermon.get("topics", []),
             "key_themes": sermon.get("key_themes", []),
@@ -453,6 +511,8 @@ def build_sermon_index_entry(sermon):
         "title": sermon.get("title", ""),
         "date": sermon.get("date", ""),
         "youtube_url": sermon.get("youtube_url", ""),
+        "duration": sermon.get("duration", ""),
+        "duration_seconds": safe_int(sermon.get("duration_seconds")),
         "pastor_name": sermon.get("pastor_name", ""),
         "summary": sermon.get("summary", ""),
         "topics": sermon.get("topics", []),
@@ -478,6 +538,8 @@ def build_legacy_chunk_entry(sermon):
         "title": sermon.get("title", ""),
         "date": sermon.get("date", ""),
         "youtube_url": sermon.get("youtube_url", ""),
+        "duration": sermon.get("duration", ""),
+        "duration_seconds": safe_int(sermon.get("duration_seconds")),
         "pastor_name": sermon.get("pastor_name", ""),
         "summary": sermon.get("summary", ""),
         "topics": sermon.get("topics", []),
@@ -493,8 +555,19 @@ def run_backfill():
     updated = 0
     skipped = 0
     artifacts_written = 0
+    keys = list_sermon_keys()
+    duration_by_video = {}
 
-    for key in list_sermon_keys():
+    try:
+        api_key = get_youtube_api_key()
+        duration_by_video = get_video_durations(api_key, [
+            key.rsplit("/", 1)[-1].replace(".json", "")
+            for key in keys
+        ])
+    except Exception as exc:
+        print(f"Duration metadata backfill skipped: {exc}")
+
+    for key in keys:
         sermon = load_json(key)
         if not sermon:
             skipped += 1
@@ -521,6 +594,14 @@ def run_backfill():
         if not sermon.get("embedding"):
             sermon["embedding"] = generate_embedding(transcript)
             changed = True
+
+        duration = duration_by_video.get(sermon.get("sermon_id", ""))
+        if duration:
+            duration_seconds = safe_int(duration.get("duration_seconds"))
+            if sermon.get("duration") != duration.get("duration") or safe_int(sermon.get("duration_seconds")) != duration_seconds:
+                sermon["duration"] = duration.get("duration", "")
+                sermon["duration_seconds"] = duration_seconds
+                changed = True
 
         if changed:
             put_json(key, sermon)

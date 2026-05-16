@@ -105,8 +105,9 @@ Rules you must always follow:
 6. Respond with warmth — you are serving a faith community."""
 
 # ── Lambda-global index cache (survives warm invocations) ──────────────────
-_sermon_index    = None   # list of index entries from index.json
-_index_loaded_at = None
+_sermon_index        = None   # list of index entries from index.json
+_index_loaded_at     = None
+_index_generated_at  = ""
 _retrieval_config = None
 _retrieval_config_loaded_at = None
 
@@ -684,7 +685,7 @@ def archive_contains_term(index, term):
 
 def get_sermon_index():
     """Load index.json with Lambda-global caching."""
-    global _sermon_index, _index_loaded_at
+    global _sermon_index, _index_loaded_at, _index_generated_at
     now = datetime.now(timezone.utc)
 
     if _sermon_index is not None and _index_loaded_at:
@@ -698,6 +699,7 @@ def get_sermon_index():
         data   = json.loads(raw["Body"].read())
         _sermon_index    = merge_external_chunk_index(data.get("sermons", []))
         _index_loaded_at = now
+        _index_generated_at = data.get("generated_at", "")
         print(f"Loaded index: {len(_sermon_index)} sermons, "
               f"generated {data.get('generated_at', 'unknown')}")
         return _sermon_index
@@ -748,6 +750,8 @@ def merge_external_chunk_index(sermons):
             "title": first.get("title", ""),
             "date": first.get("date", ""),
             "youtube_url": first.get("youtube_url", ""),
+            "duration": first.get("duration", ""),
+            "duration_seconds": safe_int(first.get("duration_seconds")),
             "pastor_name": first.get("pastor_name", ""),
             "summary": first.get("summary", ""),
             "topics": first.get("topics", []),
@@ -878,12 +882,14 @@ def build_catalog_response():
 
     return {
         "sermon_count": len(sermons),
+        "stats": build_archive_stats(sermons),
         "sermons": [
             {
                 "sermon_id":            entry.get("sermon_id", ""),
                 "title":                entry.get("title", ""),
                 "date":                 entry.get("date", ""),
                 "youtube_url":          entry.get("youtube_url", ""),
+                "duration_seconds":     safe_int(entry.get("duration_seconds")),
                 "pastor_name":          entry.get("pastor_name", ""),
                 "description":          entry.get("description", ""),
                 "topics":               entry.get("topics", []),
@@ -892,6 +898,43 @@ def build_catalog_response():
             for entry in sermons
         ]
     }
+
+
+def build_archive_stats(sermons):
+    video_count = len(sermons)
+    total_duration_seconds = sum(safe_int(entry.get("duration_seconds")) for entry in sermons)
+    years = sorted({
+        (entry.get("date") or "")[:4]
+        for entry in sermons
+        if (entry.get("date") or "")[:4].isdigit()
+    })
+    by_year = {}
+
+    for entry in sermons:
+        year = (entry.get("date") or "")[:4]
+        if not year.isdigit():
+            continue
+        year_stats = by_year.setdefault(year, {"video_count": 0, "duration_seconds": 0})
+        year_stats["video_count"] += 1
+        year_stats["duration_seconds"] += safe_int(entry.get("duration_seconds"))
+
+    return {
+        "video_count": video_count,
+        "sermon_count": video_count,
+        "total_duration_seconds": total_duration_seconds,
+        "total_duration_hours": round(total_duration_seconds / 3600, 1) if total_duration_seconds else 0,
+        "year_start": years[0] if years else "",
+        "year_end": years[-1] if years else "",
+        "generated_at": _index_generated_at,
+        "by_year": by_year,
+    }
+
+
+def safe_int(value):
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 # ── BEDROCK ────────────────────────────────────────────────────────────────
