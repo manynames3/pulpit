@@ -1202,10 +1202,21 @@
       .feature-actions,
       .auth-actions,
       .query-actions,
-      .workspace-actions,
-      .media-card {
+      .workspace-actions {
         flex-direction: column;
         align-items: stretch;
+      }
+
+      .media-card {
+        grid-template-columns: 1fr;
+      }
+
+      .media-thumb {
+        width: 100%;
+      }
+
+      .answer-inline-source .media-thumb {
+        max-width: none;
       }
 
       .landing-grid {
