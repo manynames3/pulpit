@@ -52,9 +52,10 @@ MIN_RELEVANCE_SCORE = 0.35
 EXPANDED_RELEVANCE_SCORE = 0.30
 MIN_HYBRID_SCORE = 0.28
 MIN_CHUNK_SEMANTIC_SCORE = 0.22
-RETRIEVAL_VERSION = "v9-claude-haiku-45-keyword-aliases"
+RETRIEVAL_VERSION = "v11-korean-topic-synonym-rerank"
 TOKEN_RE = re.compile(r"[0-9A-Za-z가-힣]+")
 ASCII_TERM_RE = re.compile(r"^[a-z0-9]+$")
+HANGUL_RE = re.compile(r"[가-힣]")
 
 ENGLISH_LEXICAL_ALIASES = {
     "fail": "fail",
@@ -90,6 +91,29 @@ STATIC_QUERY_VARIANTS = {
     "jacob": ["야곱"],
     "moses": ["모세"],
     "exodus": ["출애굽"],
+}
+
+KOREAN_STOP_TERMS = {
+    "관련", "관한", "교회", "내용", "대한", "대해", "대해서", "목사",
+    "목사님", "설교", "설교가", "설교를", "설교에서", "설교한", "있나",
+    "있나요", "있는", "있을까요", "최근", "최근에", "찾아", "찾아줘",
+    "했나", "했나요", "하셨나", "하셨나요",
+}
+
+KOREAN_PARTICLE_SUFFIXES = (
+    "으로부터", "으로써", "으로서", "에게서", "한테서", "께서는", "에서는",
+    "이라고", "라고", "에서", "에게", "한테", "부터", "까지", "처럼",
+    "보다", "만큼", "마다", "으로", "이라", "라", "이나", "나", "은",
+    "는", "이", "가", "을", "를", "에", "의", "도", "만", "와",
+    "과", "로",
+)
+
+RECENT_QUERY_TERMS = ("최근", "최근에", "요즘", "latest", "recent", "recently")
+
+KOREAN_LEXICAL_ALIASES = {
+    "자만": ["교만", "오만"],
+    "교만": ["자만", "오만"],
+    "오만": ["자만", "교만"],
 }
 
 CRISIS_KEYWORDS = [
@@ -355,20 +379,16 @@ def rank_chunk_hits(index, queries, question, retrieval_config=None):
         if vec:
             vectors.append(vec)
 
-    if not vectors:
-        return []
-
     terms = collect_search_terms([question] + queries)
+    if not vectors and not terms:
+        return []
     hits = []
 
     for entry in index:
         for chunk in entry.get("chunks", []):
-            embedding = chunk.get("embedding")
-            if not embedding:
-                continue
-
-            semantic_score = max(cosine_similarity(vec, embedding) for vec in vectors)
             lexical_score = lexical_match_score(entry, terms, chunk.get("text", ""))
+            embedding = chunk.get("embedding")
+            semantic_score = max(cosine_similarity(vec, embedding) for vec in vectors) if embedding and vectors else 0.0
             combined_score = semantic_score + lexical_bonus(lexical_score)
 
             if semantic_score <= 0 and lexical_score <= 0:
@@ -439,7 +459,7 @@ def collapse_chunk_hits_to_sermons(chunk_hits, retrieval_config=None):
 
 
 def rerank_keyword_matches(ranked_sermons, question):
-    if not is_literal_keyword_query(question):
+    if not should_keyword_rerank(question):
         return []
 
     terms = extract_literal_terms(question)
@@ -457,16 +477,46 @@ def rerank_keyword_matches(ranked_sermons, question):
         print(f"No literal keyword matches for query '{question}'")
         return []
 
-    matched.sort(
-        key=lambda item: (
-            pastor_priority(item[0]),
-            item[2],
-            item[1]
-        ),
-        reverse=True
-    )
-    print(f"Literal keyword rerank applied for '{question}' with {len(matched)} matches")
+    if wants_recent_results(question):
+        matched.sort(
+            key=lambda item: (
+                pastor_priority(item[0]),
+                item[0].get("date", ""),
+                item[2],
+                item[1],
+            ),
+            reverse=True,
+        )
+    else:
+        matched.sort(
+            key=lambda item: (
+                pastor_priority(item[0]),
+                item[2],
+                item[1],
+            ),
+            reverse=True,
+        )
+
+    print(f"Keyword rerank applied for '{question}' with {len(matched)} matches and terms {terms}")
     return [(entry, semantic_score) for entry, semantic_score, _ in matched]
+
+
+def should_keyword_rerank(question):
+    if is_literal_keyword_query(question):
+        return True
+
+    terms = extract_literal_terms(question)
+    if not terms:
+        return False
+
+    # Natural-language Korean topic questions often include particles:
+    # "자만에 대한 설교" should still boost exact "자만" archive mentions.
+    return any(HANGUL_RE.search(term) for term in terms) and len(terms) <= 5
+
+
+def wants_recent_results(question):
+    normalized = question.lower()
+    return any(term in normalized for term in RECENT_QUERY_TERMS)
 
 
 def is_literal_keyword_query(question):
@@ -491,13 +541,41 @@ def extract_literal_terms(question):
         if len(cleaned) < minimum_term_length(cleaned):
             continue
 
-        term = normalize_english_lexical_token(cleaned)
-        if term in seen:
-            continue
-        seen.add(term)
-        terms.append(term)
+        if HANGUL_RE.search(cleaned):
+            candidates = normalize_korean_lexical_terms(cleaned)
+        else:
+            candidates = [normalize_english_lexical_token(cleaned)]
+
+        for term in candidates:
+            if term in seen:
+                continue
+            seen.add(term)
+            terms.append(term)
 
     return terms
+
+
+def normalize_korean_lexical_terms(token):
+    base = strip_korean_suffix(token)
+    candidate = base if base != token else token
+
+    if candidate in KOREAN_STOP_TERMS:
+        return []
+    if len(candidate) < minimum_term_length(candidate):
+        return []
+
+    terms = [candidate]
+    for alias in KOREAN_LEXICAL_ALIASES.get(candidate, []):
+        if alias not in terms:
+            terms.append(alias)
+    return terms
+
+
+def strip_korean_suffix(token):
+    for suffix in KOREAN_PARTICLE_SUFFIXES:
+        if token.endswith(suffix) and len(token) - len(suffix) >= 2:
+            return token[:-len(suffix)]
+    return token
 
 
 def collect_search_terms(queries):
