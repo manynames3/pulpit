@@ -52,7 +52,7 @@ MIN_RELEVANCE_SCORE = 0.35
 EXPANDED_RELEVANCE_SCORE = 0.30
 MIN_HYBRID_SCORE = 0.28
 MIN_CHUNK_SEMANTIC_SCORE = 0.22
-RETRIEVAL_VERSION = "v12-english-cloud-column-alias"
+RETRIEVAL_VERSION = "v13-english-money-alias"
 TOKEN_RE = re.compile(r"[0-9A-Za-z가-힣]+")
 ASCII_TERM_RE = re.compile(r"^[a-z0-9]+$")
 HANGUL_RE = re.compile(r"[가-힣]")
@@ -89,6 +89,7 @@ STATIC_QUERY_VARIANTS = {
     "fire column": ["불기둥"],
     "peter": ["베드로"],
     "apostle peter": ["베드로"],
+    "money": ["돈"],
     "genesis": ["창세기"],
     "jacob": ["야곱"],
     "moses": ["모세"],
