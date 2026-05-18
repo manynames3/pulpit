@@ -1005,17 +1005,20 @@
       margin-bottom: 6px;
     }
 
+    .answer-inline-source .media-content h3,
     .answer-inline-source .source-content h3 {
       margin-bottom: 10px;
       font-size: 1rem;
       line-height: 1.45;
     }
 
+    .answer-inline-source .media-content h3 a,
     .answer-inline-source .source-content h3 a {
       color: var(--ink);
       text-decoration: none;
     }
 
+    .answer-inline-source .media-content h3 a:hover,
     .answer-inline-source .source-content h3 a:hover {
       text-decoration: underline;
       text-decoration-color: rgba(16, 45, 116, 0.38);
@@ -1608,9 +1611,12 @@
             </div>
 
             <div class="prompt-row" aria-label="Suggested prompts">
-              <button class="prompt-chip" type="button" data-prompt="Noah's Ark">Noah's Ark</button>
+              <button class="prompt-chip" type="button" data-prompt="방주">방주</button>
               <button class="prompt-chip" type="button" data-prompt="구름기둥">구름기둥</button>
               <button class="prompt-chip" type="button" data-prompt="베드로">베드로</button>
+              <button class="prompt-chip" type="button" data-prompt="역사">역사</button>
+              <button class="prompt-chip" type="button" data-prompt="고고학">고고학</button>
+              <button class="prompt-chip" type="button" data-prompt="광야">광야</button>
             </div>
           </section>
 
@@ -1840,9 +1846,12 @@
           reset: "Request a code first, then enter the code and your new password."
         },
         prompts: [
-          { label: "Noah's Ark", value: "Noah's Ark" },
+          { label: "방주", value: "방주" },
           { label: "구름기둥", value: "구름기둥" },
-          { label: "베드로", value: "베드로" }
+          { label: "베드로", value: "베드로" },
+          { label: "역사", value: "역사" },
+          { label: "고고학", value: "고고학" },
+          { label: "광야", value: "광야" }
         ],
         topicLabels: {
           prayer: "Prayer",
@@ -1992,9 +2001,12 @@
           reset: "먼저 코드를 요청한 뒤, 코드와 새 비밀번호를 입력하세요."
         },
         prompts: [
-          { label: "Noah's Ark", value: "Noah's Ark" },
+          { label: "방주", value: "방주" },
           { label: "구름기둥", value: "구름기둥" },
-          { label: "베드로", value: "베드로" }
+          { label: "베드로", value: "베드로" },
+          { label: "역사", value: "역사" },
+          { label: "고고학", value: "고고학" },
+          { label: "광야", value: "광야" }
         ],
         topicLabels: {
           prayer: "기도",
@@ -3253,38 +3265,74 @@
         .toLowerCase()
         .replace(/[“”"'`‘’]/g, "")
         .replace(/\[[^\]]+\]/g, "")
+        .replace(/[|ㅣ]/g, " ")
+        .replace(/[^\p{L}\p{N}\s]/gu, " ")
         .replace(/\s+/g, " ")
         .trim();
     }
 
     function parseHeadingSource(line) {
-      const titleMatch = line.match(/"([^"]+)"/);
+      const titleMatch = line.match(/["“”'‘’]([^"“”'‘’]+)["“”'‘’]/);
       const dateMatch = line.match(/\[(\d{4}-\d{2}-\d{2})\]/);
+      const ordinalMatch = line.match(/^(?:설교|sermon)\s*(\d+)\s*:/i);
       const withoutPrefix = line.replace(/^설교\s*\d+:\s*/i, "").replace(/^sermon\s*\d+:\s*/i, "").trim();
       const inferredTitle = withoutPrefix
         .replace(/\s*\[(\d{4}-\d{2}-\d{2})\]\s*$/, "")
         .trim();
       return {
         title: titleMatch ? titleMatch[1].trim() : inferredTitle,
-        date: dateMatch ? dateMatch[1] : ""
+        date: dateMatch ? dateMatch[1] : "",
+        ordinal: ordinalMatch ? Number(ordinalMatch[1]) : 0
       };
+    }
+
+    function sourceKey(source) {
+      return `${source && source.youtube_url ? source.youtube_url : ""}|${source && source.title ? source.title : ""}`;
+    }
+
+    function hasVideoSource(source) {
+      return Boolean(source && source.youtube_url);
     }
 
     function findSourceForHeading(headingLine) {
       const parsed = parseHeadingSource(headingLine);
       const targetTitle = normalizeTitleForMatch(parsed.title);
       const targetDate = parsed.date;
+      const ordinalSource = parsed.ordinal ? currentAnswerSources[parsed.ordinal - 1] : null;
       if (!targetTitle && !targetDate) {
-        return null;
+        return hasVideoSource(ordinalSource) ? ordinalSource : null;
       }
 
-      return currentAnswerSources.find((source) => {
-        const sourceTitle = normalizeTitleForMatch(source.title || "");
-        const sourceDate = source.date || "";
-        const titleMatches = targetTitle && sourceTitle && (sourceTitle === targetTitle || sourceTitle.includes(targetTitle) || targetTitle.includes(sourceTitle));
-        const dateMatches = !targetDate || sourceDate === targetDate;
-        return titleMatches && dateMatches;
-      }) || null;
+      const sourcesWithScores = currentAnswerSources
+        .map((source, index) => {
+          const sourceTitle = normalizeTitleForMatch(source.title || "");
+          const sourceDate = source.date || "";
+          const exactTitle = targetTitle && sourceTitle && sourceTitle === targetTitle;
+          const partialTitle = targetTitle && sourceTitle && (sourceTitle.includes(targetTitle) || targetTitle.includes(sourceTitle));
+          const titleScore = exactTitle ? 4 : partialTitle ? 3 : 0;
+          const dateScore = targetDate && sourceDate === targetDate ? 2 : 0;
+          const ordinalScore = parsed.ordinal && parsed.ordinal === index + 1 ? 1 : 0;
+          return { source, score: titleScore + dateScore + ordinalScore };
+        })
+        .filter((candidate) => hasVideoSource(candidate.source) && candidate.score > 0)
+        .sort((a, b) => b.score - a.score);
+
+      if (sourcesWithScores.length) {
+        return sourcesWithScores[0].source;
+      }
+
+      if (hasVideoSource(ordinalSource)) {
+        return ordinalSource;
+      }
+
+      if (targetDate) {
+        const dateOnlyMatch = currentAnswerSources.find((source) => hasVideoSource(source) && source.date === targetDate);
+        if (dateOnlyMatch) {
+          return dateOnlyMatch;
+        }
+      }
+
+      return null;
     }
 
     function renderInlineSourceCard(source) {
@@ -3328,6 +3376,7 @@
 
       const lines = input.split("\n");
       const parts = [];
+      const renderedSourceKeys = new Set();
       let i = 0;
 
       while (i < lines.length) {
@@ -3347,6 +3396,7 @@
             : formatAnswerInline(headingText);
           parts.push(`<h4>${renderedHeading}</h4>`);
           if (source) {
+            renderedSourceKeys.add(sourceKey(source));
             parts.push(renderInlineSourceCard(source));
           }
           i += 1;
@@ -3392,6 +3442,13 @@
           i += 1;
         }
         parts.push(`<p>${paragraphLines.join("<br>")}</p>`);
+      }
+
+      if (!renderedSourceKeys.size) {
+        const fallbackSources = currentAnswerSources.filter(hasVideoSource).slice(0, 5);
+        fallbackSources.forEach((source) => {
+          parts.push(renderInlineSourceCard(source));
+        });
       }
 
       return parts.join("");
