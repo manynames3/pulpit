@@ -52,7 +52,7 @@ MIN_RELEVANCE_SCORE = 0.35
 EXPANDED_RELEVANCE_SCORE = 0.30
 MIN_HYBRID_SCORE = 0.28
 MIN_CHUNK_SEMANTIC_SCORE = 0.22
-RETRIEVAL_VERSION = "v11-korean-topic-synonym-rerank"
+RETRIEVAL_VERSION = "v12-english-cloud-column-alias"
 TOKEN_RE = re.compile(r"[0-9A-Za-z가-힣]+")
 ASCII_TERM_RE = re.compile(r"^[a-z0-9]+$")
 HANGUL_RE = re.compile(r"[가-힣]")
@@ -83,6 +83,8 @@ STATIC_QUERY_VARIANTS = {
     "flooding": ["홍수", "노아"],
     "pillar of cloud": ["구름기둥"],
     "cloud pillar": ["구름기둥"],
+    "cloud column": ["구름기둥"],
+    "column of cloud": ["구름기둥"],
     "pillar of fire": ["불기둥"],
     "fire column": ["불기둥"],
     "peter": ["베드로"],
