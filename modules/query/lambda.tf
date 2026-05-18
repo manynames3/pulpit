@@ -131,13 +131,13 @@ resource "aws_iam_role_policy" "query_lambda" {
         ]
       },
       {
-        # Nova Lite (generation) + Titan Embed Text v2 (semantic search)
+        # Bedrock answer model + Titan Embed Text v2 for semantic retrieval.
         Effect   = "Allow"
         Action   = ["bedrock:InvokeModel"]
         Resource = "*"
       },
       {
-        # Apply guardrails to Nova Lite responses
+        # Apply guardrails to generated responses.
         Effect   = "Allow"
         Action   = ["bedrock:ApplyGuardrail"]
         Resource = aws_bedrock_guardrail.pulpit.guardrail_arn

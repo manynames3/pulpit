@@ -10,7 +10,7 @@ How it works:
 3. Embed the question via Titan Embed Text v2
 4. Hybrid rank transcript chunks with semantic + lexical signals
 5. Collapse the best chunks back to sermons
-6. Nova Lite generates a cited answer from the matched sermon excerpts
+6. Bedrock generates a cited answer from the matched sermon excerpts
 7. Cache the result for repeat questions
 """
 
@@ -43,7 +43,7 @@ PASTOR_CONTACT = os.environ["PASTOR_CONTACT"]
 ENVIRONMENT    = os.environ["ENVIRONMENT"]
 LEAD_PASTOR    = os.environ.get("LEAD_PASTOR_NAME", "이혜진 목사")
 
-TOP_K           = 5     # sermons sent to Nova Lite
+TOP_K           = 5     # sermons sent to the Bedrock answer model
 CHUNK_TOP_K     = 12    # candidate chunk hits before collapsing to sermons
 FALLBACK_LIMIT  = 30    # max sermons if index has no embeddings yet
 CACHE_TTL_DAYS  = 30
@@ -52,7 +52,7 @@ MIN_RELEVANCE_SCORE = 0.35
 EXPANDED_RELEVANCE_SCORE = 0.30
 MIN_HYBRID_SCORE = 0.28
 MIN_CHUNK_SEMANTIC_SCORE = 0.22
-RETRIEVAL_VERSION = "v7-chunk-hybrid-lexical-normalization-inline-source-answer"
+RETRIEVAL_VERSION = "v9-claude-haiku-45-keyword-aliases"
 TOKEN_RE = re.compile(r"[0-9A-Za-z가-힣]+")
 ASCII_TERM_RE = re.compile(r"^[a-z0-9]+$")
 
@@ -75,12 +75,17 @@ DEFAULT_RETRIEVAL_CONFIG = {
 STATIC_QUERY_VARIANTS = {
     "wilderness": ["광야"],
     "noah": ["노아"],
+    "ark": ["방주", "노아", "홍수"],
     "noahs ark": ["노아", "방주", "홍수"],
     "noah's ark": ["노아", "방주", "홍수"],
     "flood": ["홍수", "노아"],
     "flooding": ["홍수", "노아"],
+    "pillar of cloud": ["구름기둥"],
+    "cloud pillar": ["구름기둥"],
     "pillar of fire": ["불기둥"],
     "fire column": ["불기둥"],
+    "peter": ["베드로"],
+    "apostle peter": ["베드로"],
     "genesis": ["창세기"],
     "jacob": ["야곱"],
     "moses": ["모세"],
@@ -473,7 +478,8 @@ def is_literal_keyword_query(question):
     if not hangul_or_word:
         return False
 
-    return "".join(hangul_or_word) == re.sub(r"\s+", "", question.strip())
+    compact_question = re.sub(r"[\s'’]", "", question.strip())
+    return "".join(hangul_or_word) == compact_question
 
 
 def extract_literal_terms(question):
@@ -842,7 +848,7 @@ def cosine_similarity(a, b):
 # ── CONTEXT BUILDING ────────────────────────────────────────────────────────
 
 def build_sermon_context(entries):
-    """Format top-K sermon excerpts for Nova Lite's context window."""
+    """Format top-K sermon excerpts for the Bedrock answer model's context window."""
     lines = ["Relevant sermon excerpts from the archive (retrieved by chunked hybrid search):\n"]
 
     for i, entry in enumerate(entries, 1):

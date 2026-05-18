@@ -31,14 +31,14 @@ variable "ingest_schedule" {
   default     = "cron(0 6 ? * MON *)"
 }
 
-# LLM model selection — swap to upgrade quality vs cost
-# amazon.nova-lite-v1:0           ~$0.06/1M input  (default, budget)
-# amazon.nova-pro-v1:0            ~$0.80/1M input  (mid tier)
-# anthropic.claude-haiku-4-5-20251001   ~$0.80/1M input  (high quality)
-# anthropic.claude-sonnet-4-6     ~$3.00/1M input  (best quality)
+# LLM model selection. Titan Embed Text v2 remains the retrieval embedding model.
+# amazon.nova-lite-v1:0                         budget answer model
+# us.amazon.nova-pro-v1:0                       stronger Amazon answer model
+# us.anthropic.claude-haiku-4-5-20251001-v1:0   balanced Anthropic answer model
+# us.anthropic.claude-sonnet-4-6                premium answer model
 variable "bedrock_model_id" {
   description = "Bedrock LLM model ID. Swap to upgrade quality vs cost."
-  default     = "amazon.nova-lite-v1:0"
+  default     = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 }
 
 variable "enable_guardduty" {

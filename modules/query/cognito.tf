@@ -17,6 +17,12 @@ resource "aws_cognito_user_pool" "pulpit" {
     enabled = true
   }
 
+  verification_message_template {
+    default_email_option = "CONFIRM_WITH_CODE"
+    email_subject        = "Your Pulpit verification code"
+    email_message        = "Your Pulpit confirmation code is {####}."
+  }
+
   tags = local.tags
 }
 

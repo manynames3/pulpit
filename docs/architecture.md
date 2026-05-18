@@ -25,7 +25,7 @@ flowchart LR
     cognito["Amazon Cognito\nUser auth + groups"]
     api["API Gateway REST API\n/query + /catalog"]
     query["Query Lambda\nPython 3.12"]
-    bedrock["Amazon Bedrock\nNova Lite + Titan Embeddings + Guardrails"]
+    bedrock["Amazon Bedrock\nClaude Haiku answers\nNova Lite metadata\nTitan embeddings + Guardrails"]
     s3["Amazon S3\ntranscripts/<year>/...\ntranscripts/index.json"]
     ddbCache["DynamoDB\npulpit-cache-*"]
     ddbLog["DynamoDB\npulpit-queries-*"]
@@ -61,7 +61,7 @@ flowchart LR
    - checks the cache table
    - loads `transcripts/index.json` from S3 and caches it in the Lambda execution environment
    - runs chunked hybrid retrieval using semantic and lexical signals
-   - calls Bedrock Guardrails and Nova Lite to generate the answer
+   - calls Bedrock Guardrails and Claude Haiku 4.5 to generate the answer
    - writes audit records to DynamoDB
 5. The frontend renders the answer, sources, and indexed archive catalog.
 

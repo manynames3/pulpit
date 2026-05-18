@@ -48,7 +48,8 @@ Pulpit is a production-style retrieval application for searching a Korean-Englis
 - S3
 - CloudTrail
 - Bedrock Guardrails
-- Bedrock Nova Lite
+- Bedrock Claude Haiku 4.5 for answer generation
+- Bedrock Nova Lite for ingestion metadata extraction
 - Titan Embed Text v2
 
 ### Ingestion and indexing
