@@ -87,6 +87,7 @@ The system has three distinct planes:
 Detailed architecture documentation:
 
 - [Architecture overview](docs/architecture.md)
+- [Retrieval quality iterations](docs/retrieval-quality-iterations.md)
 - [Architecture decision records](docs/adrs/README.md)
 
 ## Runtime Data on AWS

@@ -32,13 +32,23 @@ variable "ingest_schedule" {
 }
 
 # LLM model selection. Titan Embed Text v2 remains the retrieval embedding model.
-# amazon.nova-lite-v1:0                         budget answer model
-# us.amazon.nova-pro-v1:0                       stronger Amazon answer model
-# us.anthropic.claude-haiku-4-5-20251001-v1:0   balanced Anthropic answer model
-# us.anthropic.claude-sonnet-4-6                premium answer model
-variable "bedrock_model_id" {
-  description = "Bedrock LLM model ID. Swap to upgrade quality vs cost."
-  default     = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+# amazon.nova-lite-v1:0                         budget model
+# us.amazon.nova-pro-v1:0                       stronger Amazon model
+# us.anthropic.claude-haiku-4-5-20251001-v1:0   balanced Anthropic model
+# us.anthropic.claude-sonnet-4-6                premium model
+variable "bedrock_model_planner" {
+  description = "Bedrock LLM model ID used to analyze questions into retrieval subqueries."
+  default     = "amazon.nova-lite-v1:0"
+}
+
+variable "bedrock_model_reranker" {
+  description = "Bedrock LLM model ID used to rerank retrieved evidence chunks."
+  default     = "amazon.nova-lite-v1:0"
+}
+
+variable "bedrock_model_answer" {
+  description = "Bedrock LLM model ID used to synthesize the final cited answer."
+  default     = "amazon.nova-lite-v1:0"
 }
 
 variable "enable_guardduty" {

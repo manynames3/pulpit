@@ -27,7 +27,7 @@ build() {
     --python-version "$LAMBDA_PYTHON_VERSION" \
     --only-binary=:all:
 
-  cp "$SRC/handler.py" "$PKG/"
+  find "$SRC" -maxdepth 1 -name "*.py" -exec cp {} "$PKG/" \;
   echo "  $NAME ready"
 }
 

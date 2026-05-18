@@ -1,5 +1,7 @@
 variable "environment" {}
-variable "bedrock_model_id" { default = "us.anthropic.claude-haiku-4-5-20251001-v1:0" }
+variable "bedrock_model_planner" { default = "amazon.nova-lite-v1:0" }
+variable "bedrock_model_reranker" { default = "amazon.nova-lite-v1:0" }
+variable "bedrock_model_answer" { default = "amazon.nova-lite-v1:0" }
 variable "transcript_bucket" {}
 variable "ingest_lambda_arn" {}
 variable "ingest_lambda_name" {}

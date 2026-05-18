@@ -773,6 +773,69 @@
       line-height: 1.55;
     }
 
+    .archive-insights-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin: 0 0 18px;
+    }
+
+    .archive-insight-panel {
+      padding: 18px;
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(16, 45, 116, 0.09);
+      background:
+        linear-gradient(180deg, rgba(242, 238, 229, 0.52), rgba(255, 253, 250, 0.98)),
+        #fffdfa;
+      box-shadow: var(--shadow-soft);
+    }
+
+    .archive-insight-panel h3 {
+      color: var(--ink);
+      font-family: var(--font-display);
+      font-size: clamp(1.35rem, 3vw, 1.9rem);
+      line-height: 1.05;
+      margin-bottom: 8px;
+    }
+
+    .archive-insight-panel p {
+      color: var(--text-soft);
+      font-size: 0.9rem;
+      line-height: 1.55;
+    }
+
+    .archive-insight-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .archive-insight-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: 16px;
+      border: 1px solid rgba(16, 45, 116, 0.08);
+      background: rgba(255, 255, 255, 0.7);
+    }
+
+    .archive-insight-label {
+      color: var(--ink);
+      font-weight: 850;
+      line-height: 1.35;
+    }
+
+    .archive-insight-count {
+      flex: 0 0 auto;
+      color: var(--ink-soft);
+      font-size: 0.76rem;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
     .catalog-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -1181,6 +1244,7 @@
       .workspace-intro,
       .workspace-columns,
       .workspace-tips,
+      .archive-insights-grid,
       .catalog-grid {
         grid-template-columns: 1fr;
       }
@@ -1719,6 +1783,17 @@
           </article>
         </div>
 
+        <div class="archive-insights-grid" id="archive-insights-grid" aria-label="Archive topics and lessons">
+          <article class="archive-insight-panel">
+            <h3>Top Topics</h3>
+            <p>Loading archive topic patterns.</p>
+          </article>
+          <article class="archive-insight-panel">
+            <h3>Top Lessons</h3>
+            <p>Loading archive lesson patterns.</p>
+          </article>
+        </div>
+
         <div class="panel-head">
           <div class="catalog-meta" id="catalog-count">Loading indexed sermons</div>
         </div>
@@ -1810,6 +1885,10 @@
           statHoursNote: "Watchable teaching represented in the archive.",
           statYearsLabel: "Archive Years",
           statYearsNote: "Coverage currently available for search.",
+          topTopicsLabel: "Top 10 Topics",
+          topTopicsNote: "Most frequent sermon topics in the indexed archive.",
+          topLessonsLabel: "Top 10 Lessons",
+          topLessonsNote: "Recurring lessons detected from sermon metadata.",
           recentQuestions: "Recent Questions",
           sessionHistory: "Session history",
           sessionFooter: "Official archive workspace for Atlanta Bethel Church. This interface is intentionally narrower than the main website."
@@ -1968,6 +2047,10 @@
           statHoursNote: "아카이브에 담긴 설교 영상 분량입니다.",
           statYearsLabel: "아카이브 연도",
           statYearsNote: "현재 검색 가능한 설교 범위입니다.",
+          topTopicsLabel: "많이 다룬 주제 Top 10",
+          topTopicsNote: "색인된 설교 메타데이터에서 반복적으로 나타난 주제입니다.",
+          topLessonsLabel: "반복되는 교훈 Top 10",
+          topLessonsNote: "설교 메타데이터에서 반복적으로 기록된 핵심 교훈입니다.",
           recentQuestions: "최근 질문",
           sessionHistory: "세션 기록",
           sessionFooter: "아틀란타 벧엘교회를 위한 공식 아카이브 작업 공간입니다. 이 인터페이스는 메인 홈페이지보다 더 집중된 용도로 설계되었습니다."
@@ -2386,6 +2469,7 @@
       renderTopicTabs();
       renderTopicCards(activeTopic);
       renderArchiveStats();
+      renderArchiveInsights();
       if (catalogLoaded) {
         renderCatalog();
       }
@@ -2504,6 +2588,76 @@
       return new Intl.NumberFormat(locale, options).format(value);
     }
 
+    const ARCHIVE_INSIGHT_STOP_TERMS = new Set([
+      "주일예배",
+      "주일 예배",
+      "주일 설교",
+      "금요설교",
+      "금요예배",
+      "새벽예배",
+      "새벽 이슬 예배",
+      "새벽 만나 예배",
+      "온라인 예배",
+      "신년 예배",
+      "신년특별새벽예배",
+      "새성전 입당 특별새벽예배",
+      "고난주간",
+      "신앙",
+      "예배"
+    ]);
+
+    function normalizeMetadataTerms(value) {
+      const rawTerms = Array.isArray(value)
+        ? value
+        : String(value || "").split(/[,;\n]+/);
+
+      return rawTerms
+        .map((term) => String(term || "").replace(/\s+/g, " ").trim().replace(/^[\s.,!?;:'"()[\]{}]+|[\s.,!?;:'"()[\]{}]+$/g, ""))
+        .filter((term) => term && !ARCHIVE_INSIGHT_STOP_TERMS.has(term.toLowerCase()));
+    }
+
+    function buildRankedMetadataTerms(entries, field, limit = 10) {
+      const counts = new Map();
+      const labels = new Map();
+
+      entries.forEach((entry) => {
+        const seenForSermon = new Set();
+        normalizeMetadataTerms(entry[field]).forEach((term) => {
+          const key = term.toLowerCase();
+          if (seenForSermon.has(key)) {
+            return;
+          }
+          seenForSermon.add(key);
+          labels.set(key, labels.get(key) || term);
+          counts.set(key, (counts.get(key) || 0) + 1);
+        });
+      });
+
+      return [...counts.entries()]
+        .sort((a, b) => b[1] - a[1] || labels.get(a[0]).localeCompare(labels.get(b[0])))
+        .slice(0, limit)
+        .map(([key, count]) => ({ label: labels.get(key), count }));
+    }
+
+    function normalizeInsightItems(items) {
+      return Array.isArray(items)
+        ? items
+            .map((item) => ({
+              label: String(item.label || item.term || item.name || "").trim(),
+              count: safeNumber(item.count || item.sermon_count)
+            }))
+            .filter((item) => item.label && item.count)
+        : [];
+    }
+
+    function formatInsightCount(count) {
+      const value = localizedNumber(count);
+      if (currentLanguage === "ko") {
+        return `${value}편`;
+      }
+      return `${value} sermon${count === 1 ? "" : "s"}`;
+    }
+
     function formatHoursStat(totalSeconds) {
       const hours = totalSeconds / 3600;
       const formatted = localizedNumber(hours, {
@@ -2538,7 +2692,9 @@
         sermon_count: entries.length,
         total_duration_seconds: totalDurationSeconds,
         year_start: years[0] || "",
-        year_end: years[years.length - 1] || ""
+        year_end: years[years.length - 1] || "",
+        top_topics: buildRankedMetadataTerms(entries, "topics"),
+        top_lessons: buildRankedMetadataTerms(entries, "key_themes")
       };
     }
 
@@ -2582,6 +2738,47 @@
       `;
     }
 
+    function renderArchiveInsightList(items) {
+      if (!items.length) {
+        return `<p>${escapeHtml(text("messages.statsLoading"))}</p>`;
+      }
+
+      return `
+        <div class="archive-insight-list">
+          ${items.map((item) => `
+            <div class="archive-insight-item">
+              <span class="archive-insight-label">${escapeHtml(item.label)}</span>
+              <span class="archive-insight-count">${escapeHtml(formatInsightCount(item.count))}</span>
+            </div>
+          `).join("")}
+        </div>
+      `;
+    }
+
+    function renderArchiveInsights() {
+      const container = $("archive-insights-grid");
+      if (!container) {
+        return;
+      }
+
+      const stats = catalogStats || (catalogEntries.length ? buildFallbackArchiveStats(catalogEntries) : null);
+      const topTopics = normalizeInsightItems(stats && stats.top_topics);
+      const topLessons = normalizeInsightItems(stats && stats.top_lessons);
+
+      container.innerHTML = `
+        <article class="archive-insight-panel">
+          <h3>${escapeHtml(text("labels.topTopicsLabel"))}</h3>
+          <p>${escapeHtml(text("labels.topTopicsNote"))}</p>
+          ${renderArchiveInsightList(topTopics)}
+        </article>
+        <article class="archive-insight-panel">
+          <h3>${escapeHtml(text("labels.topLessonsLabel"))}</h3>
+          <p>${escapeHtml(text("labels.topLessonsNote"))}</p>
+          ${renderArchiveInsightList(topLessons)}
+        </article>
+      `;
+    }
+
     function formatCatalogMeta(entry) {
       const parts = [];
       if (entry.date) {
@@ -2602,6 +2799,7 @@
         entry.title,
         entry.pastor_name,
         ...(entry.topics || []),
+        ...(entry.key_themes || []),
         ...(entry.scripture_references || []),
         entry.description
       ].join(" ").toLowerCase();
@@ -2624,6 +2822,7 @@
       }
 
       renderArchiveStats();
+      renderArchiveInsights();
 
       if (!filteredCatalogEntries.length) {
         list.innerHTML = `<p class="empty-state">${escapeHtml(text("messages.catalogNoMatches"))}</p>`;
@@ -2657,6 +2856,7 @@
               <div class="catalog-tags">
                 ${(entry.scripture_references || []).slice(0, 2).map((ref) => `<span class="catalog-tag">${escapeHtml(ref)}</span>`).join("")}
                 ${(entry.topics || []).slice(0, 2).map((topic) => `<span class="catalog-tag">${escapeHtml(topic)}</span>`).join("")}
+                ${(entry.key_themes || []).slice(0, 1).map((theme) => `<span class="catalog-tag">${escapeHtml(theme)}</span>`).join("")}
               </div>
             </div>
           </div>
@@ -2684,6 +2884,7 @@
       const count = $("catalog-count");
       catalogStats = null;
       renderArchiveStats();
+      renderArchiveInsights();
       list.innerHTML = `<p class="empty-state">${escapeHtml(text("messages.catalogLoadingBody"))}</p>`;
       count.textContent = text("messages.catalogLoading");
 
@@ -2704,12 +2905,16 @@
 
         const data = await response.json();
         catalogEntries = (data.sermons || []).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
-        catalogStats = data.stats || buildFallbackArchiveStats(catalogEntries);
+        catalogStats = {
+          ...buildFallbackArchiveStats(catalogEntries),
+          ...(data.stats || {})
+        };
         catalogLoaded = true;
         applyCatalogFilter();
       } catch (error) {
         catalogStats = null;
         renderArchiveStats();
+        renderArchiveInsights();
         list.innerHTML = `<p class="empty-state">${escapeHtml(text("messages.catalogErrorPrefix"))} ${escapeHtml(error.message)}</p>`;
         count.textContent = text("messages.catalogUnavailable");
       }

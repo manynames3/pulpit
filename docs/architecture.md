@@ -115,4 +115,5 @@ flowchart LR
 ## Related Documents
 
 - [ADRs](adrs/README.md)
+- [Retrieval quality iterations](retrieval-quality-iterations.md)
 - [Deployment guide](../DEPLOY.md)

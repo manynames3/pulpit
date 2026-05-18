@@ -22,16 +22,18 @@ resource "aws_lambda_function" "query" {
 
   environment {
     variables = {
-      BEDROCK_MODEL_ID  = var.bedrock_model_id
-      TRANSCRIPT_BUCKET = var.transcript_bucket
-      GUARDRAIL_ID      = aws_bedrock_guardrail.pulpit.guardrail_id
-      GUARDRAIL_VERSION = aws_bedrock_guardrail.pulpit.version
-      DYNAMODB_TABLE    = aws_dynamodb_table.query_log.name
-      CACHE_TABLE       = aws_dynamodb_table.query_cache.name
-      CONFIG_TABLE      = aws_dynamodb_table.admin_config.name
-      EVAL_TABLE        = aws_dynamodb_table.retrieval_eval.name
-      PASTOR_CONTACT    = var.pastor_contact
-      ENVIRONMENT       = var.environment
+      BEDROCK_MODEL_PLANNER  = var.bedrock_model_planner
+      BEDROCK_MODEL_RERANKER = var.bedrock_model_reranker
+      BEDROCK_MODEL_ANSWER   = var.bedrock_model_answer
+      TRANSCRIPT_BUCKET      = var.transcript_bucket
+      GUARDRAIL_ID           = aws_bedrock_guardrail.pulpit.guardrail_id
+      GUARDRAIL_VERSION      = aws_bedrock_guardrail.pulpit.version
+      DYNAMODB_TABLE         = aws_dynamodb_table.query_log.name
+      CACHE_TABLE            = aws_dynamodb_table.query_cache.name
+      CONFIG_TABLE           = aws_dynamodb_table.admin_config.name
+      EVAL_TABLE             = aws_dynamodb_table.retrieval_eval.name
+      PASTOR_CONTACT         = var.pastor_contact
+      ENVIRONMENT            = var.environment
     }
   }
 
