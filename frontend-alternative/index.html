@@ -959,6 +959,32 @@
       line-height: 1.66;
     }
 
+    .source-snippets {
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .source-snippet {
+      padding: 10px 12px;
+      border-left: 3px solid var(--gold);
+      border-radius: 8px;
+      background: rgba(190, 155, 77, 0.08);
+      color: var(--text-soft);
+      font-size: 0.86rem;
+      line-height: 1.55;
+    }
+
+    .snippet-label {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--ink-soft);
+      font-size: 0.68rem;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
     .answer-panel,
     .sources-panel,
     .history-panel {
@@ -1968,10 +1994,12 @@
           catalogErrorPrefix: "Could not load the indexed archive:",
           catalogNoMatches: "No indexed sermons matched that filter.",
           statsLoading: "Loading archive statistics.",
+          insightEmpty: "No repeated metadata is available yet.",
           indexedSermon: "Indexed Sermon",
           metadataUnavailable: "Metadata unavailable",
           transcriptReady: "Transcript indexed and ready for archive search.",
           source: "Source",
+          matchedExcerpt: "Matched excerpt",
           sourceThumb: "thumbnail",
           sermonThumb: "sermon",
           sessionExpiredBody: "Your session expired. Please sign in again.",
@@ -2130,10 +2158,12 @@
           catalogErrorPrefix: "색인된 아카이브를 불러오지 못했습니다:",
           catalogNoMatches: "조건에 맞는 색인 설교가 없습니다.",
           statsLoading: "아카이브 통계를 불러오는 중입니다.",
+          insightEmpty: "아직 반복되는 메타데이터가 없습니다.",
           indexedSermon: "색인 설교",
           metadataUnavailable: "메타데이터 없음",
           transcriptReady: "전사본이 색인되어 검색 준비가 완료되었습니다.",
           source: "출처",
+          matchedExcerpt: "검색된 본문",
           sourceThumb: "썸네일",
           sermonThumb: "설교",
           sessionExpiredBody: "세션이 만료되었습니다. 다시 로그인하세요.",
@@ -2687,14 +2717,16 @@
     function buildFallbackArchiveStats(entries) {
       const years = [...new Set(entries.map((entry) => (entry.date || "").slice(0, 4)).filter((year) => /^\d{4}$/.test(year)))].sort();
       const totalDurationSeconds = entries.reduce((sum, entry) => sum + safeNumber(entry.duration_seconds), 0);
+      const topTopics = buildRankedMetadataTerms(entries, "topics");
+      const topLessons = buildRankedMetadataTerms(entries, "key_themes");
       return {
         video_count: entries.length,
         sermon_count: entries.length,
         total_duration_seconds: totalDurationSeconds,
         year_start: years[0] || "",
         year_end: years[years.length - 1] || "",
-        top_topics: buildRankedMetadataTerms(entries, "topics"),
-        top_lessons: buildRankedMetadataTerms(entries, "key_themes")
+        top_topics: topTopics,
+        top_lessons: topLessons.length ? topLessons : topTopics
       };
     }
 
@@ -2738,9 +2770,9 @@
       `;
     }
 
-    function renderArchiveInsightList(items) {
+    function renderArchiveInsightList(items, emptyMessage) {
       if (!items.length) {
-        return `<p>${escapeHtml(text("messages.statsLoading"))}</p>`;
+        return `<p>${escapeHtml(emptyMessage)}</p>`;
       }
 
       return `
@@ -2764,17 +2796,18 @@
       const stats = catalogStats || (catalogEntries.length ? buildFallbackArchiveStats(catalogEntries) : null);
       const topTopics = normalizeInsightItems(stats && stats.top_topics);
       const topLessons = normalizeInsightItems(stats && stats.top_lessons);
+      const emptyInsightMessage = stats ? text("messages.insightEmpty") : text("messages.statsLoading");
 
       container.innerHTML = `
         <article class="archive-insight-panel">
           <h3>${escapeHtml(text("labels.topTopicsLabel"))}</h3>
           <p>${escapeHtml(text("labels.topTopicsNote"))}</p>
-          ${renderArchiveInsightList(topTopics)}
+          ${renderArchiveInsightList(topTopics, emptyInsightMessage)}
         </article>
         <article class="archive-insight-panel">
           <h3>${escapeHtml(text("labels.topLessonsLabel"))}</h3>
           <p>${escapeHtml(text("labels.topLessonsNote"))}</p>
-          ${renderArchiveInsightList(topLessons)}
+          ${renderArchiveInsightList(topLessons, emptyInsightMessage)}
         </article>
       `;
     }
@@ -2905,10 +2938,17 @@
 
         const data = await response.json();
         catalogEntries = (data.sermons || []).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+        const fallbackStats = buildFallbackArchiveStats(catalogEntries);
         catalogStats = {
-          ...buildFallbackArchiveStats(catalogEntries),
+          ...fallbackStats,
           ...(data.stats || {})
         };
+        if (!normalizeInsightItems(catalogStats.top_topics).length) {
+          catalogStats.top_topics = fallbackStats.top_topics;
+        }
+        if (!normalizeInsightItems(catalogStats.top_lessons).length) {
+          catalogStats.top_lessons = fallbackStats.top_lessons;
+        }
         catalogLoaded = true;
         applyCatalogFilter();
       } catch (error) {
@@ -3016,6 +3056,27 @@
       list.prepend(item);
     }
 
+    function renderSourceSnippets(source) {
+      const snippets = Array.isArray(source && source.snippets)
+        ? source.snippets.filter((snippet) => snippet && snippet.text)
+        : [];
+
+      if (!snippets.length) {
+        return "";
+      }
+
+      return `
+        <div class="source-snippets">
+          ${snippets.slice(0, 2).map((snippet) => `
+            <p class="source-snippet">
+              <span class="snippet-label">${escapeHtml(text("messages.matchedExcerpt"))}</span>
+              ${escapeHtml(snippet.text)}
+            </p>
+          `).join("")}
+        </div>
+      `;
+    }
+
     function renderSources(sources) {
       const list = $("sources-list");
       currentAnswerSources = Array.isArray(sources) ? [...sources] : [];
@@ -3045,6 +3106,7 @@
             <div class="source-content">
               <span class="source-meta">${escapeHtml(text("messages.source"))} ${index + 1}</span>
               <h3>${escapeHtml(sourceTitle)}</h3>
+              ${renderSourceSnippets(source)}
             </div>
           </div>
           <div class="feature-actions">

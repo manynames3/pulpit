@@ -58,12 +58,14 @@ flowchart LR
 2. The frontend authenticates against Cognito and sends requests to API Gateway.
 3. API Gateway authorizes requests with Cognito user pool tokens.
 4. The query Lambda:
-   - checks the cache table
+   - reads a cheap S3 marker for `transcripts/index.json`
+   - checks the cache table using the question and current archive marker
    - loads `transcripts/index.json` from S3 and caches it in the Lambda execution environment
-   - runs chunked hybrid retrieval using semantic and lexical signals
+   - runs chunked hybrid retrieval using semantic similarity, BM25-style lexical scoring, and versioned bilingual synonym mappings
+   - caches planner and reranker outputs separately in DynamoDB to reduce repeat model calls
    - calls Bedrock Guardrails and Claude Haiku 4.5 to generate the answer
    - writes audit records to DynamoDB
-5. The frontend renders the answer, sources, and indexed archive catalog.
+5. The frontend renders the answer, matched source snippets, source videos, and indexed archive catalog.
 
 ### Ingestion flow
 
@@ -73,7 +75,7 @@ flowchart LR
    - pastor metadata
    - topics and scripture references
    - Titan embeddings
-4. `scripts/rebuild_index.py` chunks transcripts, reuses unchanged embeddings, and publishes `transcripts/index.json`.
+4. `scripts/rebuild_index.py` chunks transcripts, enriches chunk search metadata, validates complete embeddings, reuses unchanged embeddings, and publishes `transcripts/index.json`.
 5. The next query Lambda invocation reloads the index from S3 after the cache TTL expires.
 
 ## Deployment Shape

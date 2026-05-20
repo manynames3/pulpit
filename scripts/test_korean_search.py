@@ -5,6 +5,7 @@ import importlib.util
 import os
 import sys
 from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -58,6 +59,151 @@ def test_expand_query():
     assert "cloud column" in query_service.expand_query("구름기둥")
 
 
+def test_packaged_synonyms_loaded():
+    assert query_service.PACKAGED_SYNONYM_CONFIG.get("version") == "v1"
+    assert "돈" in query_service.STATIC_QUERY_VARIANTS["money"]
+    assert query_service.ENGLISH_LEXICAL_ALIASES["failures"] == "fail"
+
+
+def test_bm25_chunk_scoring_prefers_specific_metadata_match():
+    index = [
+        {
+            "sermon_id": "specific",
+            "title": "구름기둥 설교",
+            "date": "2026-01-01",
+            "topics": ["구름기둥"],
+            "key_themes": [],
+            "scripture_references": ["출애굽기"],
+            "description": "",
+            "chunks": [
+                {
+                    "chunk_id": "specific:1",
+                    "text": "하나님께서 구름기둥으로 인도하셨습니다.",
+                    "metadata_terms": ["구름기둥", "출애굽기"],
+                    "korean_tokens": ["구름기둥"],
+                }
+            ],
+        },
+        {
+            "sermon_id": "generic",
+            "title": "광야 설교",
+            "date": "2026-01-02",
+            "topics": [],
+            "key_themes": [],
+            "scripture_references": [],
+            "description": "",
+            "chunks": [
+                {
+                    "chunk_id": "generic:1",
+                    "text": "광야에서 하나님을 바라봅니다.",
+                    "metadata_terms": [],
+                }
+            ],
+        },
+    ]
+    terms = query_service.collect_search_terms(["cloud column", "구름기둥"])
+    stats = query_service.build_bm25_stats(index, terms)
+    specific = query_service.chunk_lexical_match_score(index[0], terms, index[0]["chunks"][0], stats)
+    generic = query_service.chunk_lexical_match_score(index[1], terms, index[1]["chunks"][0], stats)
+
+    assert specific > generic
+    assert specific > 0
+
+
+def test_source_snippets_are_bounded():
+    sermon = {
+        "matched_chunks": [
+            {
+                "text": " ".join(["snippet"] * 100),
+                "score": 1.23456,
+            }
+        ]
+    }
+
+    snippets = query_service.source_snippets(sermon)
+    assert len(snippets) == 1
+    assert len(snippets[0]["text"]) <= query_service.SOURCE_SNIPPET_CHAR_LIMIT
+    assert snippets[0]["score"] == 1.2346
+
+
+def test_answer_cache_key_tracks_index_marker():
+    first = query_service.question_hash("money", "en", query_service.DEFAULT_RETRIEVAL_CONFIG, "index-a")
+    second = query_service.question_hash("money", "en", query_service.DEFAULT_RETRIEVAL_CONFIG, "index-b")
+    assert first != second
+
+
+def test_index_marker_change_clears_warm_index_cache():
+    original_s3 = query_service.s3
+    original_marker = query_service._index_marker
+    original_marker_loaded_at = query_service._index_marker_loaded_at
+    original_index = query_service._sermon_index
+    original_index_loaded_at = query_service._index_loaded_at
+    original_generated_at = query_service._index_generated_at
+
+    class FakeS3:
+        def __init__(self):
+            self.etag = "etag-a"
+
+        def head_object(self, Bucket, Key):
+            return {
+                "ETag": self.etag,
+                "LastModified": datetime(2026, 5, 18, 12, 0, tzinfo=timezone.utc),
+                "ContentLength": 123,
+            }
+
+    fake_s3 = FakeS3()
+
+    try:
+        query_service.s3 = fake_s3
+        query_service._index_marker = ""
+        query_service._index_marker_loaded_at = None
+        query_service._sermon_index = [{"sermon_id": "old"}]
+        query_service._index_loaded_at = datetime.now(timezone.utc)
+        query_service._index_generated_at = "old"
+
+        first_marker = query_service.get_index_cache_marker()
+        assert first_marker
+        assert query_service._sermon_index == [{"sermon_id": "old"}]
+
+        fake_s3.etag = "etag-b"
+        query_service._index_marker_loaded_at = None
+        second_marker = query_service.get_index_cache_marker()
+
+        assert second_marker != first_marker
+        assert query_service._sermon_index is None
+        assert query_service._index_loaded_at is None
+        assert query_service._index_generated_at == ""
+    finally:
+        query_service.s3 = original_s3
+        query_service._index_marker = original_marker
+        query_service._index_marker_loaded_at = original_marker_loaded_at
+        query_service._sermon_index = original_index
+        query_service._index_loaded_at = original_index_loaded_at
+        query_service._index_generated_at = original_generated_at
+
+
+def test_archive_stats_falls_back_lessons_to_topics():
+    stats = query_service.build_archive_stats([
+        {
+            "sermon_id": "first",
+            "date": "2026-01-01",
+            "duration_seconds": 1800,
+            "topics": ["Grace"],
+            "key_themes": [],
+        },
+        {
+            "sermon_id": "second",
+            "date": "2026-01-02",
+            "duration_seconds": 1200,
+            "topics": ["Grace"],
+            "key_themes": [],
+        },
+    ])
+
+    assert stats["top_lessons"][0]["label"] == "Grace"
+    assert stats["top_lessons"][0]["count"] == 2
+
+
 def test_retrieve_union_diversifies_broad_keyword_results():
     original_embed_text = query_service.embed_text
     original_build_query_bundle = query_service.build_query_bundle
@@ -104,5 +250,11 @@ def test_retrieve_union_diversifies_broad_keyword_results():
 if __name__ == "__main__":
     test_korean_lexical_score()
     test_expand_query()
+    test_packaged_synonyms_loaded()
+    test_bm25_chunk_scoring_prefers_specific_metadata_match()
+    test_source_snippets_are_bounded()
+    test_answer_cache_key_tracks_index_marker()
+    test_index_marker_change_clears_warm_index_cache()
+    test_archive_stats_falls_back_lessons_to_topics()
     test_retrieve_union_diversifies_broad_keyword_results()
     print("Korean search tests passed")

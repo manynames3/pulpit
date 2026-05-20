@@ -17,6 +17,8 @@ so reruns are inexpensive after the first chunked build.
 import hashlib
 import json
 import os
+import re
+from collections import Counter
 from datetime import datetime, timezone
 
 import boto3
@@ -28,6 +30,18 @@ CHUNK_OVERLAP_WORDS = int(os.environ.get("PULPIT_CHUNK_OVERLAP_WORDS", "40"))
 MAX_EMBED_CHARS = int(os.environ.get("PULPIT_MAX_EMBED_CHARS", "8000"))
 DEFAULT_INDEX_KEY = os.environ.get("PULPIT_INDEX_KEY", "transcripts/index.json")
 DEFAULT_PREFIX = os.environ.get("PULPIT_TRANSCRIPT_PREFIX", "transcripts/")
+TOKEN_RE = re.compile(r"[0-9A-Za-z가-힣]+")
+ASCII_TERM_RE = re.compile(r"^[a-z0-9]+$")
+HANGUL_RE = re.compile(r"[가-힣]")
+KO_TOKEN_RE = re.compile(r"[0-9A-Za-z\uAC00-\uD7A3\u1100-\u11FF\u3130-\u318F]+")
+KO_TOKEN_TRIM = ".,!?;:'\"()[]{}「」『』【】—–…·"
+ENGLISH_STOP_TERMS = {
+    "about", "after", "again", "all", "and", "are", "because", "been",
+    "but", "can", "did", "does", "for", "from", "had", "has", "have",
+    "his", "into", "its", "may", "not", "our", "sermon", "sermons",
+    "she", "that", "the", "their", "there", "this", "through", "was",
+    "were", "what", "when", "where", "which", "with", "you", "your",
+}
 
 
 def now_iso():
@@ -130,6 +144,94 @@ def chunk_transcript(transcript):
     return chunks
 
 
+def normalize_english_token(token):
+    token = (token or "").lower().strip()
+    if not ASCII_TERM_RE.fullmatch(token):
+        return token
+    if len(token) > 5 and token.endswith("ies"):
+        return token[:-3] + "y"
+    if len(token) > 5 and token.endswith("ing"):
+        base = token[:-3]
+        if len(base) >= 3 and base[-1] == base[-2]:
+            base = base[:-1]
+        return base
+    if len(token) > 4 and token.endswith("ed"):
+        base = token[:-2]
+        if len(base) >= 3 and base[-1] == base[-2]:
+            base = base[:-1]
+        return base
+    if len(token) > 4 and token.endswith("es"):
+        return token[:-2]
+    if len(token) > 3 and token.endswith("s"):
+        return token[:-1]
+    return token
+
+
+def english_tokens(text, limit=40):
+    counts = Counter()
+    for token in TOKEN_RE.findall(text or ""):
+        normalized = normalize_english_token(token.lower())
+        if not ASCII_TERM_RE.fullmatch(normalized):
+            continue
+        if len(normalized) < 3 or normalized in ENGLISH_STOP_TERMS:
+            continue
+        counts[normalized] += 1
+    return [term for term, _ in counts.most_common(limit)]
+
+
+def korean_tokens(text, limit=60):
+    counts = Counter()
+    for raw in KO_TOKEN_RE.findall(text or ""):
+        token = raw.strip(KO_TOKEN_TRIM).lower()
+        if not token or not HANGUL_RE.search(token) or len(token) < 2:
+            continue
+        counts[token] += 1
+    return [term for term, _ in counts.most_common(limit)]
+
+
+def normalized_metadata_terms(sermon):
+    values = []
+    for field in ("topics", "key_themes", "scripture_references"):
+        value = sermon.get(field, [])
+        if isinstance(value, str):
+            value = re.split(r"[,;\n]+", value)
+        if isinstance(value, list):
+            values.extend(value)
+
+    terms = []
+    seen = set()
+    for value in values:
+        term = re.sub(r"\s+", " ", str(value or "")).strip(" \t\r\n.,!?;:'\"()[]{}")
+        key = term.lower()
+        if not term or key in seen:
+            continue
+        seen.add(key)
+        terms.append(term)
+    return terms
+
+
+def chunk_search_text(sermon, chunk_text):
+    return "\n".join([
+        sermon.get("title", ""),
+        " ".join(sermon.get("topics", [])),
+        " ".join(sermon.get("key_themes", [])),
+        " ".join(sermon.get("scripture_references", [])),
+        sermon.get("description", ""),
+        chunk_text or "",
+    ]).strip()
+
+
+def enrich_chunk_metadata(sermon, chunk_text):
+    search_text = chunk_search_text(sermon, chunk_text)
+    metadata_terms = normalized_metadata_terms(sermon)
+    return {
+        "search_text": search_text,
+        "metadata_terms": metadata_terms,
+        "english_tokens": english_tokens(search_text),
+        "korean_tokens": korean_tokens(search_text),
+    }
+
+
 def sermon_embed_input(sermon):
     fields = [
         sermon.get("title", ""),
@@ -145,6 +247,8 @@ def sermon_embed_input(sermon):
 def build_sermon_entry(sermon, existing_entry, chunk_embedding_cache, bedrock):
     transcript = sermon.get("transcript", "") or ""
     transcript_hash = sha256_text(transcript)
+    topics = sermon.get("topics", [])
+    key_themes = sermon.get("key_themes") or topics
 
     existing_hash = (existing_entry or {}).get("transcript_hash")
     if existing_hash == transcript_hash and existing_entry and existing_entry.get("embedding"):
@@ -159,6 +263,7 @@ def build_sermon_entry(sermon, existing_entry, chunk_embedding_cache, bedrock):
         if not chunk_embedding:
             chunk_embedding = embed_text(bedrock, chunk["text"])
             chunk_embedding_cache[chunk_hash] = chunk_embedding
+        chunk_metadata = enrich_chunk_metadata(sermon, chunk["text"])
 
         chunks.append({
             "chunk_id": f"{sermon['sermon_id']}:{chunk['chunk_index']}",
@@ -169,6 +274,7 @@ def build_sermon_entry(sermon, existing_entry, chunk_embedding_cache, bedrock):
             "duration": sermon.get("duration", ""),
             "duration_seconds": safe_int(sermon.get("duration_seconds")),
             "text": chunk["text"],
+            **chunk_metadata,
             "embedding": chunk_embedding,
         })
 
@@ -182,13 +288,38 @@ def build_sermon_entry(sermon, existing_entry, chunk_embedding_cache, bedrock):
         "description": sermon.get("description", ""),
         "pastor_name": sermon.get("pastor_name", ""),
         "scripture_references": sermon.get("scripture_references", []),
-        "topics": sermon.get("topics", []),
-        "key_themes": sermon.get("key_themes", []),
+        "topics": topics,
+        "key_themes": key_themes,
         "embedding": sermon_embedding,
         "transcript_hash": transcript_hash,
         "transcript_word_count": len(transcript.split()),
         "chunks": chunks,
     }
+
+
+def validate_index_embeddings(index_payload):
+    sermons = index_payload.get("sermons", [])
+    missing_sermon_embeddings = [
+        entry.get("sermon_id") or entry.get("title", "")
+        for entry in sermons
+        if not entry.get("embedding")
+    ]
+    missing_chunk_embeddings = []
+
+    for entry in sermons:
+        for chunk in entry.get("chunks", []):
+            if not chunk.get("embedding"):
+                missing_chunk_embeddings.append(chunk.get("chunk_id", "unknown"))
+
+    if missing_sermon_embeddings or missing_chunk_embeddings:
+        message = (
+            f"Index validation failed: {len(missing_sermon_embeddings)} sermon embeddings missing, "
+            f"{len(missing_chunk_embeddings)} chunk embeddings missing"
+        )
+        if os.environ.get("PULPIT_ALLOW_INCOMPLETE_INDEX") == "1":
+            print(f"WARNING: {message}")
+            return
+        raise RuntimeError(message)
 
 
 def rebuild_index(bucket, region="us-east-1", prefix=DEFAULT_PREFIX, index_key=DEFAULT_INDEX_KEY):
@@ -229,9 +360,20 @@ def rebuild_index(bucket, region="us-east-1", prefix=DEFAULT_PREFIX, index_key=D
         "sermon_count": len(sermons),
         "embedding_count": sum(1 for entry in sermons if entry.get("embedding")),
         "chunk_count": chunk_count,
-        "chunk_embedding_count": sum(len(entry.get("chunks", [])) for entry in sermons),
+        "chunk_embedding_count": sum(
+            1
+            for entry in sermons
+            for chunk in entry.get("chunks", [])
+            if chunk.get("embedding")
+        ),
+        "chunk_embedding_complete": all(
+            chunk.get("embedding")
+            for entry in sermons
+            for chunk in entry.get("chunks", [])
+        ),
         "sermons": sermons,
     }
+    validate_index_embeddings(index_payload)
 
     s3.put_object(
         Bucket=bucket,

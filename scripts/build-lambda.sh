@@ -28,6 +28,7 @@ build() {
     --only-binary=:all:
 
   find "$SRC" -maxdepth 1 -name "*.py" -exec cp {} "$PKG/" \;
+  find "$SRC" -maxdepth 1 -name "*.json" -exec cp {} "$PKG/" \;
   echo "  $NAME ready"
 }
 

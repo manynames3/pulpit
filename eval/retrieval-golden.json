@@ -1,0 +1,38 @@
+[
+  {
+    "id": "ko-pride-recent",
+    "question": "최근에 목사님이 자만에 대한 설교를 했나요",
+    "subqueries": ["자만", "교만", "pride"],
+    "expected_terms": ["자만", "교만", "오만"]
+  },
+  {
+    "id": "en-cloud-column",
+    "question": "cloud column",
+    "subqueries": ["cloud column", "구름기둥", "pillar of cloud"],
+    "expected_terms": ["구름기둥"]
+  },
+  {
+    "id": "en-money",
+    "question": "money",
+    "subqueries": ["money", "돈", "재물", "물질"],
+    "expected_terms": ["돈", "재물", "물질"]
+  },
+  {
+    "id": "en-fail-word-forms",
+    "question": "failure",
+    "subqueries": ["failure", "fail", "실패"],
+    "expected_terms": ["fail", "failure", "실패"]
+  },
+  {
+    "id": "ko-archaeology-forms",
+    "question": "고고학",
+    "subqueries": ["고고학", "고고학자", "발굴", "유물", "유적"],
+    "expected_terms": ["고고학", "고고학자", "발굴", "유물", "유적"]
+  },
+  {
+    "id": "en-death-source-cards",
+    "question": "death",
+    "subqueries": ["death", "죽음", "사망"],
+    "expected_terms": ["death", "죽음", "사망"]
+  }
+]

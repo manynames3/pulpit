@@ -96,7 +96,7 @@ Transcript data and runtime state are visible in AWS:
 
 - `pulpit-transcripts-dev-636305658578/transcripts/<year>/...` stores sermon JSON records.
 - `pulpit-transcripts-dev-636305658578/transcripts/index.json` stores the search index used by the query Lambda.
-- `pulpit-cache-dev` stores cached answers keyed by question hash, language, and retrieval version.
+- `pulpit-cache-dev` stores cached answers keyed by question hash, language, retrieval version, and current S3 index marker.
 - `pulpit-queries-dev` stores audit log entries for actual user queries and responses.
 - `pulpit-cloudtrail-dev-636305658578/AWSLogs/...` stores AWS activity logs.
 
@@ -199,6 +199,8 @@ If the church grants OAuth 2.0 access to the channel owner account, the ingestio
 Current runner files:
 
 - `scripts/ingest-local.py`
+- `scripts/rebuild_index.py`
+- `scripts/evaluate_retrieval.py`
 - `scripts/run-ingest-batch.sh`
 - `scripts/install_ingest_cron.sh`
 - `scripts/pulpit-ingest.env.example`
@@ -223,7 +225,13 @@ The ingestion script:
 - extracts metadata with Bedrock
 - generates Titan embeddings
 - uploads sermon JSON to S3
-- rebuilds `transcripts/index.json`
+- rebuilds `transcripts/index.json` with chunk metadata and validated embeddings
+
+Local retrieval checks can run against an exported index without making AWS calls:
+
+```bash
+python3 scripts/evaluate_retrieval.py --index /path/to/transcripts/index.json
+```
 
 ## Security and Privacy
 

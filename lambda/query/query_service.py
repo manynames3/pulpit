@@ -24,6 +24,7 @@ import unicodedata
 import boto3
 from collections import Counter
 from datetime import datetime, timezone
+from pathlib import Path
 
 from botocore.exceptions import ClientError
 
@@ -36,6 +37,7 @@ RERANKER_MODEL_ID = os.environ["BEDROCK_MODEL_RERANKER"]
 ANSWER_MODEL_ID   = os.environ["BEDROCK_MODEL_ANSWER"]
 EMBED_MODEL_ID    = "amazon.titan-embed-text-v2:0"
 BUCKET            = os.environ["TRANSCRIPT_BUCKET"]
+INDEX_KEY         = os.environ.get("PULPIT_INDEX_KEY", "transcripts/index.json")
 GUARDRAIL_ID      = os.environ["GUARDRAIL_ID"]
 GUARDRAIL_VER     = os.environ["GUARDRAIL_VERSION"]
 LOG_TABLE         = os.environ["DYNAMODB_TABLE"]
@@ -53,14 +55,18 @@ CHUNK_DIVERSITY_PER_SERMON = 3
 MATCHED_CHUNKS_PER_SERMON = 3
 ANSWER_CONTEXT_CHAR_LIMIT = 15000
 RERANK_SNIPPET_CHAR_LIMIT = 220
+SOURCE_SNIPPETS_PER_SERMON = 2
+SOURCE_SNIPPET_CHAR_LIMIT = 360
 FALLBACK_LIMIT           = 30    # max sermons if index has no embeddings yet
 CACHE_TTL_DAYS           = 30
+INTERMEDIATE_CACHE_TTL_DAYS = 7
 INDEX_TTL_SEC            = 600   # reload index every 10 min to pick up new sermons
+INDEX_MARKER_TTL_SEC     = 60    # cheap S3 HEAD cadence for answer-cache invalidation
 MIN_RELEVANCE_SCORE = 0.35
 EXPANDED_RELEVANCE_SCORE = 0.30
 MIN_HYBRID_SCORE = 0.28
 MIN_CHUNK_SEMANTIC_SCORE = 0.22
-RETRIEVAL_VERSION = "v15-planned-union-retrieval"
+RETRIEVAL_VERSION = "v16-bm25-synonym-snippets"
 TOKEN_RE = re.compile(r"[0-9A-Za-z가-힣]+")
 ASCII_TERM_RE = re.compile(r"^[a-z0-9]+$")
 HANGUL_RE = re.compile(r"[가-힣]")
@@ -69,6 +75,34 @@ _KO_TOKEN_RE = re.compile(r"[0-9A-Za-z\uAC00-\uD7A3\u1100-\u11FF\u3130-\u318F]+"
 _KO_TOKEN_TRIM = ".,!?;:'\"()[]{}「」『』【】—–…·"
 QUERY_BUNDLE_LIMIT = 8
 QUERY_EXPANSION_TERM_LIMIT = 12
+BM25_K1 = 1.35
+BM25_B = 0.72
+BM25_FIELD_WEIGHTS = {
+    "title": 4.0,
+    "topics": 3.4,
+    "key_themes": 3.0,
+    "scripture": 3.2,
+    "description": 1.6,
+    "chunk_metadata": 2.0,
+    "chunk": 1.0,
+}
+SYNONYM_CONFIG_PATH = Path(os.environ.get(
+    "PULPIT_SYNONYM_CONFIG",
+    Path(__file__).with_name("retrieval_synonyms.json"),
+))
+
+
+def load_packaged_synonym_config():
+    try:
+        with SYNONYM_CONFIG_PATH.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+            return data if isinstance(data, dict) else {}
+    except Exception as e:
+        print(f"Synonym config load error: {e}")
+        return {}
+
+
+PACKAGED_SYNONYM_CONFIG = load_packaged_synonym_config()
 
 METADATA_TOPIC_STOP_TERMS = {
     "주일예배",
@@ -162,6 +196,13 @@ KOREAN_LEXICAL_ALIASES = {
 KOREAN_SINGLE_CHAR_TERMS = {
     "돈", "죄", "시", "창", "출", "민", "신", "왕", "마", "막", "눅", "요", "행", "롬", "계",
 }
+KOREAN_TOKEN_SUFFIXES = (
+    "으로부터", "들께서는", "들에게", "들에서", "들처럼", "들까지", "들보다",
+    "께서는", "에서는", "에게서", "으로써", "로부터", "이라는", "라는",
+    "으로", "에서", "에게", "까지", "부터", "보다", "처럼", "마다",
+    "하고", "이며", "이고", "라는", "이란", "들은", "들을", "들이", "들의",
+    "께서", "께", "은", "는", "이", "가", "을", "를", "에", "의", "와", "과", "로", "도", "만", "들",
+)
 
 _CROSSWALK_GROUPS = [
     {"noah", "노아"},
@@ -207,6 +248,64 @@ _CROSSWALK_GROUPS = [
     {"revelation", "요한계시록", "계"},
 ]
 
+
+def apply_packaged_synonyms(config):
+    if not isinstance(config, dict):
+        return
+
+    for term in config.get("metadata_stop_terms") or []:
+        if str(term or "").strip():
+            METADATA_TOPIC_STOP_TERMS.add(str(term).strip())
+
+    for canonical, aliases in (config.get("english_aliases") or {}).items():
+        canonical = str(canonical or "").strip().lower()
+        if not canonical:
+            continue
+        alias_values = aliases if isinstance(aliases, list) else [aliases]
+        for alias in alias_values:
+            alias_key = str(alias or "").strip().lower()
+            if alias_key:
+                ENGLISH_LEXICAL_ALIASES[alias_key] = canonical
+
+    for key, aliases in (config.get("korean_aliases") or {}).items():
+        key = str(key or "").strip()
+        if not key:
+            continue
+        alias_values = aliases if isinstance(aliases, list) else [aliases]
+        KOREAN_LEXICAL_ALIASES[key] = [
+            str(alias).strip()
+            for alias in alias_values
+            if str(alias or "").strip()
+        ]
+
+    for key, values in (config.get("query_variants") or {}).items():
+        key = str(key or "").strip().lower()
+        if not key:
+            continue
+        value_list = values if isinstance(values, list) else [values]
+        STATIC_QUERY_VARIANTS[key] = [
+            str(value).strip()
+            for value in value_list
+            if str(value or "").strip()
+        ]
+
+    crosswalk_groups = config.get("crosswalk_groups") or []
+    if crosswalk_groups:
+        _CROSSWALK_GROUPS.clear()
+        for group in crosswalk_groups:
+            if not isinstance(group, list):
+                continue
+            normalized_group = {
+                str(term).strip().lower()
+                for term in group
+                if str(term or "").strip()
+            }
+            if normalized_group:
+                _CROSSWALK_GROUPS.append(normalized_group)
+
+
+apply_packaged_synonyms(PACKAGED_SYNONYM_CONFIG)
+
 _CROSSWALK_INDEX = {}
 for _group in _CROSSWALK_GROUPS:
     for _term in _group:
@@ -233,6 +332,8 @@ Rules you must always follow:
 _sermon_index        = None   # list of index entries from index.json
 _index_loaded_at     = None
 _index_generated_at  = ""
+_index_marker = ""
+_index_marker_loaded_at = None
 _retrieval_config = None
 _retrieval_config_loaded_at = None
 _query_variant_cache = {}
@@ -252,14 +353,15 @@ def answer_question(question, user_id="anonymous", user_groups="member"):
         }
 
     retrieval_config = get_retrieval_config()
+    index_marker = get_index_cache_marker()
 
     # 1. Cache check — identical questions cost nothing.
-    cached = check_cache(question, answer_language, retrieval_config)
+    cached = check_cache(question, answer_language, retrieval_config, index_marker)
     if cached:
         return {**cached, "cached": True, "answer_language": answer_language}
 
     # 2. Analyze the natural-language request before retrieval.
-    question_analysis = analyze_question(question, bedrock)
+    question_analysis = analyze_question(question, bedrock, retrieval_config)
 
     # 3. Semantic search across full archive.
     sermons = find_relevant_sermons(question, retrieval_config, question_analysis)
@@ -281,6 +383,7 @@ def answer_question(question, user_id="anonymous", user_groups="member"):
             "title":       e.get("title", ""),
             "date":        e.get("date", ""),
             "youtube_url": e.get("youtube_url", ""),
+            "snippets":    source_snippets(e),
         }
         for e in sermons
     ]
@@ -290,7 +393,7 @@ def answer_question(question, user_id="anonymous", user_groups="member"):
         "sources": sources,
         "answer_language": answer_language,
     }
-    cache_answer(question, result, answer_language, retrieval_config)
+    cache_answer(question, result, answer_language, retrieval_config, index_marker)
     log_query(
         user_id,
         user_groups,
@@ -306,7 +409,7 @@ def answer_question(question, user_id="anonymous", user_groups="member"):
 
 # ── QUESTION PLANNING ──────────────────────────────────────────────────────
 
-def analyze_question(question: str, bedrock_client) -> dict:
+def analyze_question(question: str, bedrock_client, retrieval_config=None) -> dict:
     prompt = (
         "You analyze a user's question for a bilingual Korean/English church sermon archive.\n"
         "Return ONLY one JSON object. Do not include preamble, explanation, markdown, or code fences.\n\n"
@@ -333,6 +436,10 @@ def analyze_question(question: str, bedrock_client) -> dict:
         "scripture_refs": [],
         "language": "en",
     }
+
+    cached = get_intermediate_cache("planner", question, retrieval_config)
+    if isinstance(cached, dict):
+        return cached
 
     try:
         resp = bedrock_client.converse(
@@ -371,6 +478,7 @@ def analyze_question(question: str, bedrock_client) -> dict:
             f"Question analysis: type={analysis['type']}, "
             f"language={analysis['language']}, subqueries={analysis['subqueries']}"
         )
+        put_intermediate_cache("planner", question, analysis, retrieval_config, INTERMEDIATE_CACHE_TTL_DAYS)
         return analysis
     except Exception as e:
         print(f"Question analysis error: {e}")
@@ -672,6 +780,27 @@ def rerank_evidence_chunks(question, question_analysis, chunk_hits):
         reverse=True,
     )[:CHUNK_CANDIDATE_LIMIT]
 
+    cache_payload = {
+        "question": question,
+        "question_type": question_analysis.get("type", "detailed") if isinstance(question_analysis, dict) else "detailed",
+        "chunk_ids": [
+            {
+                "id": hit.get("chunk_id", ""),
+                "score": round(float(hit.get("score", hit.get("combined_score", 0)) or 0), 4),
+                "text_hash": hashlib.sha256((hit.get("chunk", {}).get("text", "")[:500]).encode()).hexdigest()[:12],
+            }
+            for hit in candidates
+        ],
+    }
+    cached_order = get_intermediate_cache("reranker", cache_payload)
+    if isinstance(cached_order, list) and cached_order:
+        by_id = {hit.get("chunk_id"): hit for hit in candidates if hit.get("chunk_id")}
+        ordered = [by_id[chunk_id] for chunk_id in cached_order if chunk_id in by_id]
+        remaining = [hit for hit in candidates if hit.get("chunk_id") not in set(cached_order)]
+        if ordered:
+            print(f"Rerank cache hit for {len(ordered)} chunks")
+            return ordered + remaining
+
     payload_lines = []
     for hit in candidates:
         entry = hit.get("entry", {})
@@ -716,6 +845,7 @@ def rerank_evidence_chunks(question, question_analysis, chunk_hits):
         ordered = [by_id[chunk_id] for chunk_id in ordered_ids if chunk_id in by_id]
         remaining = [hit for hit in candidates if hit.get("chunk_id") not in set(ordered_ids)]
         print(f"Reranked {len(ordered)} chunks with {len(remaining)} score-ordered fallbacks")
+        put_intermediate_cache("reranker", cache_payload, ordered_ids, None, INTERMEDIATE_CACHE_TTL_DAYS)
         return ordered + remaining
     except Exception as e:
         print(f"Rerank error: {e}")
@@ -832,12 +962,13 @@ def rank_chunk_hits(index, queries, question, retrieval_config=None, limit=CHUNK
     terms = collect_search_terms([question] + queries)
     if not vectors and not terms:
         return []
+    bm25_stats = build_bm25_stats(index, terms) if terms else None
     hits = []
 
     for entry in index:
         for chunk in entry.get("chunks", []):
-            lexical_score = lexical_match_score(entry, terms, chunk.get("text", ""))
-            primary_lexical_score = lexical_match_score(entry, primary_terms, chunk.get("text", ""))
+            lexical_score = chunk_lexical_match_score(entry, terms, chunk, bm25_stats)
+            primary_lexical_score = chunk_lexical_match_score(entry, primary_terms, chunk, bm25_stats)
             embedding = chunk.get("embedding")
             semantic_score = max(cosine_similarity(vec, embedding) for vec in vectors) if embedding and vectors else 0.0
             combined_score = (
@@ -1092,6 +1223,112 @@ def collect_search_terms(queries):
     return terms
 
 
+def chunk_lexical_match_score(entry, terms, chunk=None, bm25_stats=None):
+    if not terms:
+        return 0.0
+
+    chunk = chunk or {}
+    if bm25_stats:
+        return bm25_chunk_score(entry, terms, chunk, bm25_stats)
+
+    return lexical_match_score(entry, terms, chunk.get("text", ""))
+
+
+def chunk_field_texts(entry, chunk):
+    chunk_metadata = chunk.get("metadata_terms") or []
+    if isinstance(chunk_metadata, str):
+        chunk_metadata = [chunk_metadata]
+    token_terms = []
+    for field in ("english_tokens", "korean_tokens"):
+        values = chunk.get(field) or []
+        if isinstance(values, str):
+            values = [values]
+        token_terms.extend(str(value) for value in values if str(value or "").strip())
+
+    return {
+        "title": entry.get("title", ""),
+        "topics": " ".join(entry.get("topics", [])),
+        "key_themes": " ".join(entry.get("key_themes", [])),
+        "scripture": " ".join(entry.get("scripture_references", [])),
+        "description": entry.get("description", ""),
+        "chunk_metadata": " ".join([*(str(item) for item in chunk_metadata), *token_terms]),
+        "chunk": chunk.get("text", "") or chunk.get("search_text", ""),
+    }
+
+
+def chunk_search_text(entry, chunk):
+    return " ".join(chunk_field_texts(entry, chunk).values())
+
+
+def search_document_length(text):
+    return max(len(tokenize(text)) + len(_ko_tokens(text)), 1)
+
+
+def build_bm25_stats(index, terms):
+    if not terms:
+        return None
+
+    df = Counter()
+    doc_lengths = {}
+    total_length = 0
+    doc_count = 0
+
+    for entry in index:
+        for chunk in entry.get("chunks", []):
+            chunk_id = chunk_identifier(entry, chunk)
+            text = chunk_search_text(entry, chunk)
+            doc_length = search_document_length(text)
+            doc_lengths[chunk_id] = doc_length
+            total_length += doc_length
+            doc_count += 1
+
+            for term in terms:
+                if term_count(text, term) > 0:
+                    df[term] += 1
+
+    if not doc_count:
+        return None
+
+    return {
+        "doc_count": doc_count,
+        "avgdl": total_length / doc_count,
+        "df": df,
+        "doc_lengths": doc_lengths,
+    }
+
+
+def bm25_chunk_score(entry, terms, chunk, stats):
+    doc_count = stats.get("doc_count", 0)
+    avgdl = stats.get("avgdl", 1) or 1
+    if not doc_count:
+        return 0.0
+
+    chunk_id = chunk_identifier(entry, chunk)
+    doc_len = max(stats.get("doc_lengths", {}).get(chunk_id, avgdl), 1)
+    fields = chunk_field_texts(entry, chunk)
+    total = 0.0
+
+    for term in terms:
+        df = stats.get("df", {}).get(term, 0)
+        if df <= 0:
+            continue
+
+        weighted_tf = 0.0
+        for field, text in fields.items():
+            hits = term_count(text, term)
+            if hits:
+                weighted_tf += hits * BM25_FIELD_WEIGHTS.get(field, 1.0)
+
+        if weighted_tf <= 0:
+            continue
+
+        idf = math.log(1 + (doc_count - df + 0.5) / (df + 0.5))
+        denominator = weighted_tf + BM25_K1 * (1 - BM25_B + BM25_B * (doc_len / avgdl))
+        total += idf * ((weighted_tf * (BM25_K1 + 1)) / denominator)
+
+    return total
+
+
 def lexical_match_score(entry, terms, transcript_text=None):
     title = (entry.get("title") or "").lower()
     topics = " ".join(entry.get("topics", [])).lower()
@@ -1150,14 +1387,41 @@ def _ko_normalize(text: str) -> str:
 def _ko_tokens(text: str) -> list[str]:
     """Return Korean-bearing tokens while dropping particles and other one-char noise."""
     tokens = []
+    seen = set()
     for raw in _KO_TOKEN_RE.findall(text or ""):
         token = raw.strip(_KO_TOKEN_TRIM).lower()
         if not token or not _HANGUL.search(token):
             continue
-        if len(token) < 2 and token not in KOREAN_SINGLE_CHAR_TERMS:
-            continue
-        tokens.append(token)
+        for variant in _ko_token_variants(token):
+            if len(variant) < 2 and variant not in KOREAN_SINGLE_CHAR_TERMS:
+                continue
+            if variant in seen:
+                continue
+            seen.add(variant)
+            tokens.append(variant)
     return tokens
+
+
+def _ko_token_variants(token: str) -> list[str]:
+    variants = [token]
+    current = token
+
+    changed = True
+    while changed:
+        changed = False
+        for suffix in KOREAN_TOKEN_SUFFIXES:
+            if not current.endswith(suffix):
+                continue
+            base = current[:-len(suffix)]
+            if len(base) < 2 and base not in KOREAN_SINGLE_CHAR_TERMS:
+                continue
+            if base and base != current:
+                current = base
+                variants.append(current)
+                changed = True
+                break
+
+    return variants
 
 
 def korean_lexical_score(query: str, document: str) -> float:
@@ -1430,6 +1694,38 @@ def archive_contains_term(index, term):
     return False
 
 
+def get_index_cache_marker():
+    """Return a cheap version marker for the S3 search index used in answer cache keys."""
+    global _index_marker, _index_marker_loaded_at, _sermon_index, _index_loaded_at, _index_generated_at
+    now = datetime.now(timezone.utc)
+
+    if _index_marker and _index_marker_loaded_at:
+        age = (now - _index_marker_loaded_at).total_seconds()
+        if age < INDEX_MARKER_TTL_SEC:
+            return _index_marker
+
+    try:
+        meta = s3.head_object(Bucket=BUCKET, Key=INDEX_KEY)
+        last_modified = meta.get("LastModified")
+        last_modified_value = last_modified.isoformat() if hasattr(last_modified, "isoformat") else str(last_modified or "")
+        etag = str(meta.get("ETag", "")).strip('"')
+        content_length = str(meta.get("ContentLength", ""))
+        marker = f"{INDEX_KEY}:{etag}:{last_modified_value}:{content_length}"
+
+        if _index_marker and marker != _index_marker:
+            print("Index marker changed — clearing Lambda index cache")
+            _sermon_index = None
+            _index_loaded_at = None
+            _index_generated_at = ""
+
+        _index_marker = marker
+        _index_marker_loaded_at = now
+        return marker
+    except Exception as e:
+        print(f"Index marker read error: {e}")
+        return _index_marker or f"{INDEX_KEY}:unknown"
+
+
 def get_sermon_index():
     """Load index.json with Lambda-global caching."""
     global _sermon_index, _index_loaded_at, _index_generated_at
@@ -1442,7 +1738,7 @@ def get_sermon_index():
 
     print("Loading sermon index from S3...")
     try:
-        raw    = s3.get_object(Bucket=BUCKET, Key="transcripts/index.json")
+        raw    = s3.get_object(Bucket=BUCKET, Key=INDEX_KEY)
         data   = json.loads(raw["Body"].read())
         _sermon_index    = merge_external_chunk_index(data.get("sermons", []))
         _index_loaded_at = now
@@ -1631,6 +1927,27 @@ def build_sermon_context(entries):
     return context
 
 
+def source_snippets(entry):
+    snippets = []
+    seen = set()
+    for chunk in entry.get("matched_chunks", []):
+        text = re.sub(r"\s+", " ", chunk.get("text", "")).strip()
+        if not text:
+            continue
+        key = hashlib.sha256(text[:500].encode()).hexdigest()
+        if key in seen:
+            continue
+        seen.add(key)
+        snippets.append({
+            "text": text[:SOURCE_SNIPPET_CHAR_LIMIT],
+            "score": round(float(chunk.get("score", chunk.get("combined_score", 0)) or 0), 4),
+            "neighbor": bool(chunk.get("neighbor", False)),
+        })
+        if len(snippets) >= SOURCE_SNIPPETS_PER_SERMON:
+            break
+    return snippets
+
+
 def build_catalog_response():
     index = get_sermon_index()
     sermons = sorted(index, key=lambda e: e.get("date", ""), reverse=True)
@@ -1723,6 +2040,11 @@ def build_archive_stats(sermons):
         year_stats["video_count"] += 1
         year_stats["duration_seconds"] += safe_int(entry.get("duration_seconds"))
 
+    top_topics = build_ranked_metadata_terms(sermons, "topics")
+    top_lessons = build_ranked_metadata_terms(sermons, "key_themes")
+    if not top_lessons:
+        top_lessons = top_topics
+
     return {
         "video_count": video_count,
         "sermon_count": video_count,
@@ -1732,8 +2054,8 @@ def build_archive_stats(sermons):
         "year_end": years[-1] if years else "",
         "generated_at": _index_generated_at,
         "by_year": by_year,
-        "top_topics": build_ranked_metadata_terms(sermons, "topics"),
-        "top_lessons": build_ranked_metadata_terms(sermons, "key_themes"),
+        "top_topics": top_topics,
+        "top_lessons": top_lessons,
     }
 
 
@@ -1833,26 +2155,86 @@ def crisis_redirect_answer(answer_language):
 
 
 def retrieval_config_version(retrieval_config=None):
-    return str((retrieval_config or {}).get("version", "default"))
+    base_version = str((retrieval_config or {}).get("version", "default"))
+    synonym_version = str(PACKAGED_SYNONYM_CONFIG.get("version", "none"))
+    return f"{base_version}:synonyms-{synonym_version}"
 
 
-def question_hash(question, preferred_language="en", retrieval_config=None):
+def question_hash(question, preferred_language="en", retrieval_config=None, index_marker=None):
     normalized_language = normalize_language(preferred_language)
     config_version = retrieval_config_version(retrieval_config)
-    key = f"{normalized_language}:{config_version}:{question.lower().strip()}"
+    archive_version = str(index_marker or "index-unknown")
+    key = f"{normalized_language}:{config_version}:{archive_version}:{question.lower().strip()}"
     return hashlib.sha256(key.encode()).hexdigest()
 
 
-def check_cache(question, preferred_language="en", retrieval_config=None):
+def stable_json(value):
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+
+
+def intermediate_cache_hash(cache_type, payload, retrieval_config=None):
+    key = stable_json({
+        "type": cache_type,
+        "retrievalVersion": RETRIEVAL_VERSION,
+        "configVersion": retrieval_config_version(retrieval_config),
+        "payload": payload,
+    })
+    return f"{cache_type}:{hashlib.sha256(key.encode()).hexdigest()}"
+
+
+def get_intermediate_cache(cache_type, payload, retrieval_config=None):
     try:
         table = dynamodb.Table(CACHE_TABLE)
-        item  = table.get_item(Key={"questionHash": question_hash(question, preferred_language, retrieval_config)}).get("Item")
+        item = table.get_item(
+            Key={"questionHash": intermediate_cache_hash(cache_type, payload, retrieval_config)}
+        ).get("Item")
+        if not item:
+            return None
+        if item.get("cacheType") != cache_type:
+            return None
+        if item.get("retrievalVersion") != RETRIEVAL_VERSION:
+            return None
+        if item.get("configVersion") != retrieval_config_version(retrieval_config):
+            return None
+        print(f"{cache_type} cache hit")
+        return item.get("payload")
+    except Exception as e:
+        print(f"{cache_type} cache read error: {e}")
+        return None
+
+
+def put_intermediate_cache(cache_type, payload_key, payload, retrieval_config=None, ttl_days=INTERMEDIATE_CACHE_TTL_DAYS):
+    try:
+        table = dynamodb.Table(CACHE_TABLE)
+        now = datetime.now(timezone.utc)
+        table.put_item(Item={
+            "questionHash": intermediate_cache_hash(cache_type, payload_key, retrieval_config),
+            "cacheType": cache_type,
+            "payload": payload,
+            "retrievalVersion": RETRIEVAL_VERSION,
+            "configVersion": retrieval_config_version(retrieval_config),
+            "cachedAt": now.isoformat(),
+            "expiresAt": int(now.timestamp()) + (ttl_days * 86400),
+        })
+    except Exception as e:
+        print(f"{cache_type} cache write error: {e}")
+
+
+def check_cache(question, preferred_language="en", retrieval_config=None, index_marker=None):
+    try:
+        table = dynamodb.Table(CACHE_TABLE)
+        item  = table.get_item(Key={"questionHash": question_hash(question, preferred_language, retrieval_config, index_marker)}).get("Item")
         if item:
+            if item.get("cacheType") not in (None, "answer"):
+                return None
             if item.get("configVersion") != retrieval_config_version(retrieval_config):
                 print("Cache miss: retrieval config changed")
                 return None
             if item.get("retrievalVersion") != RETRIEVAL_VERSION:
                 print("Cache miss: retrieval version changed")
+                return None
+            if item.get("indexMarker") != str(index_marker or "index-unknown"):
+                print("Cache miss: index changed")
                 return None
             if "sources" not in item:
                 print("Cache miss: legacy entry missing sources")
@@ -1876,12 +2258,13 @@ def check_cache(question, preferred_language="en", retrieval_config=None):
     return None
 
 
-def cache_answer(question, result, preferred_language="en", retrieval_config=None):
+def cache_answer(question, result, preferred_language="en", retrieval_config=None, index_marker=None):
     try:
         table = dynamodb.Table(CACHE_TABLE)
         now   = datetime.now(timezone.utc)
         table.put_item(Item={
-            "questionHash":     question_hash(question, preferred_language, retrieval_config),
+            "questionHash":     question_hash(question, preferred_language, retrieval_config, index_marker),
+            "cacheType":        "answer",
             "question":         question,
             "preferredLanguage": normalize_language(preferred_language),
             "answer":           result["answer"],
@@ -1889,6 +2272,7 @@ def cache_answer(question, result, preferred_language="en", retrieval_config=Non
             "sources":          result.get("sources", []),
             "retrievalVersion": RETRIEVAL_VERSION,
             "configVersion":    retrieval_config_version(retrieval_config),
+            "indexMarker":      str(index_marker or "index-unknown"),
             "cachedAt":         now.isoformat(),
             "expiresAt":        int(now.timestamp()) + (CACHE_TTL_DAYS * 86400)
         })
@@ -1934,6 +2318,7 @@ def log_retrieval_eval(user_id, question, answer, sermons, retrieval_config):
                 "date": sermon.get("date", ""),
                 "match_score": str(round(float(sermon.get("match_score", 0) or 0), 4)),
                 "matched_chunk_count": len(sermon.get("matched_chunks", [])),
+                "snippets": [snippet.get("text", "")[:220] for snippet in source_snippets(sermon)],
             })
 
         table.put_item(Item={

@@ -158,27 +158,66 @@ Current model roles:
 
 This allows quality upgrades to the answer model without rebuilding the archive or changing the embedding pipeline.
 
+## Iteration 11: Local Retrieval Evaluation
+
+The repo now includes a lightweight golden-query file and local evaluation harness:
+
+- `eval/retrieval-golden.json`
+- `scripts/evaluate_retrieval.py`
+
+The harness can run in lexical-only mode against an exported `transcripts/index.json` to avoid AWS cost, or with Bedrock embeddings when explicitly requested. The initial golden set covers known weak patterns such as English-to-Korean terms, Korean natural-language questions, English word forms, and source-card coverage.
+
+Result: retrieval changes can be compared against repeatable queries instead of judged only by ad hoc manual searches.
+
+## Iteration 12: BM25-Style Lexical Ranking
+
+Chunk lexical scoring now uses BM25-style scoring with boosted fields for titles, topics, key themes, scripture references, descriptions, chunk metadata, and transcript text.
+
+Result: rare, archive-specific terms such as `구름기둥` or `고고학` get stronger ranking behavior than broad common words, while metadata matches can lift the right chunk even when transcript phrasing varies.
+
+## Iteration 13: Versioned Synonym Configuration
+
+High-value bilingual aliases and crosswalk terms now live in `lambda/query/retrieval_synonyms.json`, and the Lambda package includes JSON config files.
+
+Result: Bible/church vocabulary mappings can grow as a versioned retrieval asset instead of requiring every synonym update to be buried in application logic.
+
+## Iteration 14: Richer Offline Chunk Metadata
+
+`scripts/rebuild_index.py` now enriches chunks with search text, metadata terms, Korean tokens, and English tokens while validating that sermon and chunk embeddings are present.
+
+Result: query-time ranking has better structured signals without adding always-on search infrastructure or extra per-query model calls.
+
+## Iteration 15: Source Snippets and Intermediate Caching
+
+Query responses now include matched snippets for each source sermon so the frontend can show why a video was returned. Planner and reranker outputs are cached separately in the existing DynamoDB cache table, keyed by retrieval version and config version.
+
+Answer-cache keys also include a cheap S3 marker for `transcripts/index.json` based on object metadata. When the index object changes, cached answers miss automatically and the Lambda warm index cache is cleared before retrieval reloads the archive.
+
+Result: users get better source verification, and repeated planning/reranking work costs less without adding new AWS resources.
+
 ## Current Behavior
 
 The current query path is:
 
-1. Check DynamoDB cache.
-2. Analyze the question into bilingual subqueries.
-3. Run per-subquery hybrid retrieval.
-4. Union chunk candidates.
-5. Prefer literal matches for literal keyword queries.
-6. Expand neighboring chunks from the same sermon.
-7. Rerank evidence chunks.
-8. Collapse chunks back to the top sermons.
-9. Build bounded context for Bedrock.
-10. Generate a cited answer.
-11. Cache and audit-log the response.
+1. Read the current S3 index marker.
+2. Check the DynamoDB answer cache against that archive version.
+3. Analyze the question into bilingual subqueries, using cached planner output when available.
+4. Run per-subquery hybrid retrieval with semantic similarity and BM25-style lexical ranking.
+5. Union chunk candidates.
+6. Prefer literal matches for literal keyword queries.
+7. Expand neighboring chunks from the same sermon.
+8. Rerank evidence chunks, using cached reranker output when available.
+9. Collapse chunks back to the top sermons.
+10. Build bounded context for Bedrock.
+11. Generate a cited answer.
+12. Return source sermons with matched snippets.
+13. Cache and audit-log the response.
 
 ## Remaining Limitations
 
 - Some sparse topics still return few results because the underlying archive contains few direct mentions.
-- If chunk embeddings are missing from the current index, retrieval leans heavily on lexical scoring until chunk embeddings are backfilled.
-- DynamoDB cached answers can hide retrieval improvements until the cache expires or the retrieval version changes.
+- If chunk embeddings are missing from the current index, the index rebuild now fails by default unless explicitly allowed.
+- DynamoDB cached answers are invalidated by retrieval version, retrieval config version, synonym version, and S3 index object changes.
 - The system is still optimized for one church archive, not a general theological corpus.
 - A dedicated search backend may become justified if the archive grows enough that Lambda-loaded S3 indexes become too large or slow.
 
@@ -186,8 +225,8 @@ The current query path is:
 
 The smallest high-impact next steps are:
 
-- Backfill chunk embeddings for every transcript chunk.
-- Add a small curated synonym table for high-value Korean/English Bible terms.
-- Store query evaluations and mark which returned sermon was actually useful.
+- Fill in `expected_sermon_ids` in `eval/retrieval-golden.json` as staff validates useful results.
+- Keep extending `lambda/query/retrieval_synonyms.json` with church-specific bilingual terms.
+- Store user feedback on which returned sermon was actually useful.
 - Add admin tools for preferred sermons, hidden sermons, and curated topic mappings.
 - Consider OpenSearch Serverless or another managed retrieval layer only when archive size or query volume justifies the extra cost.
