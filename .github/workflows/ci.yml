@@ -29,13 +29,30 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
+      - name: Install Test Dependencies
+        run: python -m pip install -r lambda/query/requirements.txt
+
       - name: Build Lambda Packages
         run: ./scripts/build-lambda.sh
+
+      - name: Python Syntax Check
+        run: python -m py_compile lambda/query/query_service.py scripts/rebuild_index.py scripts/evaluate_retrieval.py scripts/test_korean_search.py
+
+      - name: Retrieval Regression Tests
+        run: python scripts/test_korean_search.py
+
+      - name: Frontend JavaScript Syntax Check
+        run: awk '/<script>/{flag=1; next} /<\/script>/{flag=0} flag' frontend-alternative/index.html | node --check
 
       - name: Terraform Format Check
         run: terraform fmt -check -recursive
@@ -93,7 +110,18 @@ jobs:
 
       - name: Terraform Plan
         id: plan
-        run: terraform plan -no-color -input=false -var-file=environments/dev/terraform.tfvars
+        shell: bash
+        run: |
+          set +e
+          terraform plan -no-color -input=false -var-file=environments/dev/terraform.tfvars > plan.txt 2>&1
+          status=$?
+          {
+            echo "stdout<<EOF"
+            sed -n '1,650p' plan.txt
+            echo "EOF"
+            echo "exitcode=$status"
+          } >> "$GITHUB_OUTPUT"
+          exit "$status"
         continue-on-error: true
 
       - name: Post Plan to PR
@@ -114,5 +142,5 @@ jobs:
             });
 
       - name: Plan Status
-        if: steps.plan.outcome == 'failure'
+        if: steps.plan.outputs.exitcode != '0'
         run: exit 1

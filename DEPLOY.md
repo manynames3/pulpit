@@ -63,7 +63,7 @@ Use this if you want repeatable CLI deploys.
 
 This repo already includes:
 
-- [wrangler.toml](/Users/aiden/Documents/Codex/2026-04-21-read-pulpit-repo/wrangler.toml)
+- [wrangler.toml](wrangler.toml)
 
 That file points Cloudflare Pages at:
 
@@ -74,7 +74,6 @@ That file points Cloudflare Pages at:
 From the repo root:
 
 ```bash
-cd /Users/aiden/Documents/Codex/2026-04-21-read-pulpit-repo
 npx wrangler login
 ```
 
@@ -87,14 +86,12 @@ npx wrangler pages project create pulpit-archive --production-branch main
 ### First production deploy
 
 ```bash
-cd /Users/aiden/Documents/Codex/2026-04-21-read-pulpit-repo
 npx wrangler pages deploy frontend-alternative --project-name pulpit-archive
 ```
 
 ### Preview deploy
 
 ```bash
-cd /Users/aiden/Documents/Codex/2026-04-21-read-pulpit-repo
 npx wrangler pages deploy frontend-alternative --project-name pulpit-archive --branch preview
 ```
 

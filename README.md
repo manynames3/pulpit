@@ -1,104 +1,96 @@
 # Pulpit
-### Serverless bilingual sermon search built with AWS Bedrock, Lambda, Cognito, DynamoDB, S3, Terraform, and Cloudflare Pages
+
+Serverless bilingual sermon RAG built with AWS Bedrock, Lambda, Cognito, DynamoDB, S3, Terraform, GitHub Actions, and Cloudflare Pages.
 
 [![Pulpit CI](https://github.com/manynames3/pulpit/actions/workflows/ci.yml/badge.svg)](https://github.com/manynames3/pulpit/actions/workflows/ci.yml)
 
-Pulpit is a production-style retrieval application for searching a Korean-English sermon archive with natural language. It ingests YouTube captions, builds a chunked hybrid search index, and serves authenticated cited answers through a low-idle-cost serverless backend.
+Pulpit is a production-style retrieval application for a Korean-English sermon archive. It ingests YouTube captions, builds a chunked hybrid search index, and serves authenticated, cited answers through a low-idle-cost AWS backend with Terraform-managed infrastructure, audit logging, cache invalidation, and CI validation.
+
+**Positioning:** A cloud/platform engineering work sample focused on practical serverless architecture, operational ownership, and cost-aware RAG.
 
 **Live demo:** [https://pulpit.pages.dev](https://pulpit.pages.dev)
 
-## Key Outcomes
+Verified reachable on 2026-05-24. The app is church-specific and requires Cognito sign-in for archive access.
 
-- Built a production-style bilingual sermon search app with authenticated query, cited answers, and a live deployed frontend.
-- Kept runtime cost low by using a static frontend, serverless AWS backend, and an S3-backed hybrid search index instead of always-on search infrastructure.
-- Solved a real ingest constraint by moving transcript collection to a local runner when YouTube blocked cloud IP ranges.
+## Problem
 
-## What I built
+Uploading sermon transcripts into a general chat product creates one-off answers, but not a durable archive. The church needed a searchable, shared, auditable way to answer questions like "Has Pastor preached on this topic, passage, or question?" without running expensive always-on search infrastructure.
 
-- Static frontend deployed on Cloudflare Pages
-- AWS query backend using API Gateway, Lambda, Cognito, DynamoDB, S3, and Bedrock
-- Local ingestion and indexing pipeline for YouTube captions
-- Terraform infrastructure and GitHub Actions validation pipeline
+## Solution
 
-**Core stack:** AWS Bedrock · Lambda · Cognito · DynamoDB · S3 · Terraform · Cloudflare Pages · Python · JavaScript
+Pulpit splits the system into three planes:
 
-**Interesting constraint:** transcript ingestion runs locally instead of in AWS because YouTube blocks cloud IP ranges for the caption retrieval path used by this project.
+- A static frontend on Cloudflare Pages.
+- An AWS serverless query path using API Gateway, Cognito, Lambda, DynamoDB, S3, Bedrock models, and Bedrock Guardrails.
+- A local ingestion runner that handles YouTube caption collection, enriches sermon records, generates embeddings, and publishes a versioned S3 search index.
 
-## About
+The design intentionally avoids a managed vector database for the current archive size. Retrieval uses a prebuilt S3 index, Lambda warm-cache reuse, semantic scoring, BM25-style lexical matching, bilingual synonym expansion, reranking, cited source snippets, and answer-cache keys tied to the current index marker.
 
-- Built for Atlanta Bethel Church, a Korean-English bilingual congregation.
-- Solves a practical archive problem: “Has Pastor preached on this topic, passage, or question?”
-- Uses a low-idle-cost runtime model: static frontend + serverless query backend + local ingestion runner.
-- Deploys infrastructure with Terraform and validates it in GitHub Actions.
+## Operational Value
+
+- Low idle cost: static frontend, pay-per-use Lambda/API Gateway/DynamoDB/Bedrock, and S3-backed index storage.
+- Real access control: Cognito protects query and catalog endpoints.
+- Auditability: query and response records are written to DynamoDB with TTL.
+- Recovery discipline: Terraform-managed resources, S3 versioning, cache TTLs, and dev teardown support.
+- Practical ingestion: local runner avoids YouTube transcript blocking from cloud IP ranges without adding proxy infrastructure.
 
 ## Tech Stack
 
-### Application
-
-- Static HTML/CSS/JavaScript frontend
-- `frontend-alternative/` for the current deployed UI
-- `frontend/` for the original terminal-style prototype
-
-### AWS
-
-- API Gateway (REST API)
-- Cognito User Pools and groups
-- Lambda (Python 3.12)
-- DynamoDB
-- S3
-- CloudTrail
-- Bedrock Guardrails
-- Bedrock Claude Haiku 4.5 for answer generation
-- Bedrock Nova Lite for ingestion metadata extraction
-- Titan Embed Text v2
-
-### Ingestion and indexing
-
-- YouTube Data API v3
-- `youtube-transcript-api`
-- Local cron-friendly Python ingestion runner
-- S3-backed chunked search index (`transcripts/index.json`)
-
-### Infrastructure and CI
-
-- Terraform
-- GitHub Actions
-- Checkov
+| Layer | Technology |
+|---|---|
+| Frontend | Static HTML/CSS/JavaScript, Cloudflare Pages |
+| API | API Gateway REST API, Lambda Python 3.12 |
+| Auth | Amazon Cognito user pools and groups |
+| Retrieval | S3 index, Titan embeddings, Lambda ranking logic |
+| LLM | Amazon Bedrock models and Bedrock Guardrails |
+| Data | S3, DynamoDB cache, DynamoDB query log |
+| Infrastructure | Terraform modules, GitHub Actions |
+| Ingestion | Python local runner, YouTube Data API, `yt-dlp`, `youtube-transcript-api` |
+| Validation | Python regression tests, Terraform fmt/validate, Checkov, static JS syntax check |
 
 ## Engineering Highlights
 
-- **Chunked hybrid retrieval without a vector database.** Search runs from a prebuilt S3 index plus Lambda ranking logic, which avoids OpenSearch or Pinecone idle cost.
-- **Low-cost architecture by design.** The system pushes expensive work to ingest time and keeps query-time infrastructure serverless.
-- **Pragmatic ingestion workaround.** The production ingestion path runs locally on a residential IP because YouTube blocks cloud IPs for transcript scraping.
-- **Authenticated and auditable query flow.** Cognito protects the API, DynamoDB caches repeat questions, and query logs are stored for accountability.
-- **Two frontend tracks in one repo.** The original terminal UI is preserved, while the deployed member-facing frontend lives in `frontend-alternative/`.
+- **Serverless RAG without a vector database.** The current archive fits in a Lambda-friendly S3 index, avoiding OpenSearch or external vector-store idle cost.
+- **Index-aware answer cache.** Cached answers include retrieval version, config version, synonym version, language, and the current S3 index marker so new archive data invalidates stale answers automatically.
+- **Bilingual retrieval quality work.** Query expansion, Korean token normalization, BM25-style chunk scoring, semantic similarity, diversity controls, and source snippets improve Korean-English search behavior.
+- **Auth and audit boundaries.** Cognito protects APIs, admin ingest triggers check Cognito groups, and query records are logged to DynamoDB.
+- **Operationally honest ingestion.** The reliable ingestion path is local because YouTube blocks the caption-scraping path from AWS IP ranges; the cloud ingestion Lambda remains documented as a legacy/secondary path.
+- **Deployment discipline.** Terraform defines AWS resources, CI validates infrastructure, and deploys are explicit rather than auto-applied.
 
 ## Architecture
 
-The system has three distinct planes:
-
-1. **Frontend delivery**
-   - `frontend-alternative/` is deployed as a static site on Cloudflare Pages.
-2. **Query runtime**
-   - AWS handles auth, API, retrieval, answer generation, caching, and audit logging.
-3. **Ingestion and indexing**
-   - A local script pulls YouTube captions, enriches sermons with Bedrock, and rebuilds the S3 search index.
-
-Detailed architecture documentation:
+Detailed architecture and operating notes:
 
 - [Architecture overview](docs/architecture.md)
-- [Retrieval quality iterations](docs/retrieval-quality-iterations.md)
+- [Reviewer guide](docs/reviewer-guide.md)
+- [Deployment](docs/deployment.md)
+- [Runbook](docs/runbook.md)
+- [Security](docs/security.md)
+- [Observability](docs/observability.md)
+- [Cost model](docs/cost-model.md)
+- [Testing](docs/testing.md)
+- [Teardown](docs/teardown.md)
+- [Tradeoffs](docs/tradeoffs.md)
 - [Architecture decision records](docs/adrs/README.md)
+- [Retrieval quality iterations](docs/retrieval-quality-iterations.md)
 
-## Runtime Data on AWS
+## Evidence Matrix
 
-Transcript data and runtime state are visible in AWS:
+| Area | Evidence |
+|---|---|
+| IaC | Terraform root config and modules in `modules/`; `terraform fmt`, `terraform validate`, dev/prod tfvars, explicit plan workflow |
+| CI/CD | GitHub Actions builds Lambda packages, runs Python checks, validates Terraform, runs Checkov, and plans dev infrastructure for trusted events |
+| Security | Cognito authorizer, Cognito groups, scoped Lambda IAM policies, SSM SecureString for YouTube API key, S3 public access blocks, Bedrock Guardrails, CloudTrail |
+| Reliability | SQS ingest queue with DLQ, local ingest throttles, S3 versioning, DynamoDB TTLs, Lambda error handling, explicit rollback/redeploy notes |
+| Observability | CloudWatch Lambda/API logs by default, DynamoDB query audit log, retrieval eval table, CloudTrail log bucket, documented gaps for alarms/dashboards |
+| Cost | Static frontend, pay-per-use AWS services, S3 index instead of search cluster, answer/planner/reranker caches, local batched ingestion |
+| Operations | Runbook, deployment guide, teardown guide, troubleshooting notes, validation commands |
+| Testing | Python retrieval regression tests, py_compile checks, frontend inline JS syntax check, Terraform validation, Checkov scan, optional retrieval golden-set eval |
+| Documentation | Architecture doc, reviewer guide, ADRs, security/observability/cost/testing/deployment/teardown/tradeoff docs |
 
-- `pulpit-transcripts-dev-636305658578/transcripts/<year>/...` stores sermon JSON records.
-- `pulpit-transcripts-dev-636305658578/transcripts/index.json` stores the search index used by the query Lambda.
-- `pulpit-cache-dev` stores cached answers keyed by question hash, language, retrieval version, and current S3 index marker.
-- `pulpit-queries-dev` stores audit log entries for actual user queries and responses.
-- `pulpit-cloudtrail-dev-636305658578/AWSLogs/...` stores AWS activity logs.
+## Screenshots
+
+These are AWS console screenshots already present in the repo, included as evidence of deployed resource shape. They are not synthetic test results.
 
 ![S3 transcript files](docs/screenshots/aws-s3-transcripts-2026.png)
 
@@ -108,81 +100,40 @@ Transcript data and runtime state are visible in AWS:
 
 ![CloudTrail S3 bucket](docs/screenshots/aws-s3-cloudtrail-logs.png)
 
-## Why this exists
+## Local Quickstart
 
-Uploading sermon notes or transcripts into a general chat product works for one person once. It does not create a durable, shared, auditable archive.
+Prerequisites:
 
-| Concern | One-off chat upload | Pulpit |
-|---|---|---|
-| Shared access | Per-user | Church-wide authenticated access |
-| Persistence | Re-upload every session | Archive stays in AWS |
-| Search scope | Session-bound | Whole indexed archive |
-| Auditability | None | Query log in DynamoDB |
-| Access control | None | Cognito user groups |
-| Cost model | Per-seat or ad hoc | Shared infrastructure cost |
+- Python 3.12
+- Terraform 1.5+
+- AWS CLI credentials for deployment or real ingestion
+- `yt-dlp` and `ffmpeg` for local caption ingestion
 
-## Project Structure
-
-```text
-pulpit/
-├── frontend/                    # Original terminal-style prototype UI
-├── frontend-alternative/        # Current deployed static frontend
-├── lambda/
-│   ├── ingest/                  # Legacy AWS-based ingestion path
-│   └── query/                   # Query API + catalog endpoint
-├── modules/
-│   ├── ingestion/               # S3, EventBridge, ingest Lambda, SSM
-│   ├── query/                   # API Gateway, Cognito, DynamoDB, guardrails, query Lambda
-│   ├── security/                # CloudTrail and optional GuardDuty
-│   └── knowledge-base/          # Previous / experimental KB path, not active in main.tf
-├── environments/
-│   ├── dev/
-│   └── prod/
-├── scripts/
-│   ├── ingest-local.py
-│   ├── rebuild_index.py
-│   ├── run-ingest-batch.sh
-│   ├── install_ingest_cron.sh
-│   └── build-lambda.sh
-├── docs/
-│   ├── architecture.md
-│   ├── adrs/
-│   └── screenshots/
-├── .github/workflows/ci.yml
-├── DEPLOY.md
-├── main.tf
-├── variables.tf
-├── outputs.tf
-└── wrangler.toml
-```
-
-## Deployment
-
-### Frontend
-
-- Live demo is served from Cloudflare Pages.
-- `wrangler.toml` points Pages at `frontend-alternative/`.
-- Details are in [DEPLOY.md](DEPLOY.md).
-
-### AWS backend
-
-Terraform provisions:
-
-- S3 transcript bucket
-- API Gateway REST API
-- Cognito user pool and groups
-- Query Lambda
-- DynamoDB cache and query log tables
-- CloudTrail
-- optional GuardDuty
-
-Typical flow:
+Validate the repo without AWS credentials:
 
 ```bash
-terraform init
-terraform plan -var-file=environments/dev/terraform.tfvars
-terraform apply -var-file=environments/dev/terraform.tfvars
+python3 scripts/test_korean_search.py
+python3 -m py_compile lambda/query/query_service.py scripts/rebuild_index.py scripts/evaluate_retrieval.py scripts/test_korean_search.py
+awk '/<script>/{flag=1; next} /<\\/script>/{flag=0} flag' frontend-alternative/index.html | node --check
+terraform init -backend=false
+terraform fmt -check -recursive
+terraform validate
+git diff --check
 ```
+
+Build Lambda packages:
+
+```bash
+./scripts/build-lambda.sh
+```
+
+Run the static frontend locally:
+
+```bash
+python3 -m http.server 8767 --directory frontend-alternative
+```
+
+Then open `http://127.0.0.1:8767/`. Authenticated query calls still require the configured AWS backend.
 
 ## Running Ingestion
 
@@ -193,8 +144,6 @@ Why:
 - YouTube blocks transcript scraping from AWS IP ranges.
 - A local machine on a residential or church-office connection works reliably enough to backfill in small batches.
 - A better option would be the official YouTube captions API, but that requires OAuth 2.0 credentials and explicit consent from the channel owner. An API key alone is not enough to access caption download methods for account-owned data.
-
-If the church grants OAuth 2.0 access to the channel owner account, the ingestion path should move to the official captions API before adding more scraping workarounds.
 
 Current runner files:
 
@@ -217,56 +166,156 @@ cp scripts/pulpit-ingest.env.example ~/.config/pulpit-ingest.env
 ./scripts/install_ingest_cron.sh backlog "*/30 * * * *"
 ```
 
-The ingestion script:
+The ingestion script fetches YouTube uploads, filters non-sermon content, downloads transcript text, extracts metadata, generates Titan embeddings, uploads sermon JSON to S3, and rebuilds `transcripts/index.json`.
 
-- fetches YouTube uploads
-- filters out non-sermon / non-lead-pastor content
-- downloads transcript text
-- extracts metadata with Bedrock
-- generates Titan embeddings
-- uploads sermon JSON to S3
-- rebuilds `transcripts/index.json` with chunk metadata and validated embeddings
+## Test and Validation Commands
 
-Local retrieval checks can run against an exported index without making AWS calls:
+Common local checks:
+
+```bash
+python3 scripts/test_korean_search.py
+python3 -m py_compile lambda/query/query_service.py scripts/rebuild_index.py scripts/evaluate_retrieval.py scripts/test_korean_search.py
+awk '/<script>/{flag=1; next} /<\\/script>/{flag=0} flag' frontend-alternative/index.html | node --check
+terraform fmt -check -recursive
+terraform init -backend=false
+terraform validate
+./scripts/build-lambda.sh
+git diff --check
+```
+
+Optional retrieval evaluation against an exported index:
 
 ```bash
 python3 scripts/evaluate_retrieval.py --index /path/to/transcripts/index.json
 ```
 
-## Security and Privacy
+## Deployment Overview
 
-- Cognito protects query and catalog endpoints.
-- API Gateway routes all authenticated traffic through the query Lambda.
-- Bedrock Guardrails block off-topic or unsafe prompt paths.
-- DynamoDB query logs provide an audit trail for staff review.
-- CloudTrail captures AWS API activity.
-- AWS-managed secrets live in SSM Parameter Store for cloud-side ingestion resources.
+Frontend:
 
-## Limitations
+- Cloudflare Pages serves `frontend-alternative/`.
+- `wrangler.toml` points to the deployed static directory.
 
-- **YouTube transcript retrieval is the hard constraint.** The local runner exists because the caption-scraping path is unreliable from cloud IPs.
-- **Official YouTube caption access depends on account-owner consent.** A more robust ingestion path is available through the YouTube Data API, but only if the channel owner grants OAuth 2.0 access; an API key alone is insufficient.
-- **Transcript quality depends on YouTube captions.** If a video has bad captions or no captions, retrieval quality drops.
-- **The live demo is church-specific.** Prompting, content, and guardrails are tuned for one sermon archive, not for general-purpose document search.
-- **The repo carries both active and legacy paths.** `main.tf` uses the low-cost local-ingest architecture, while some legacy AWS ingest resources remain in the repo for reference.
+AWS backend:
 
-## CI/CD and Validation
+- Terraform provisions S3, API Gateway, Cognito, Lambda, DynamoDB, CloudTrail, Bedrock Guardrails, SQS, SSM Parameter Store, and optional GuardDuty.
+- CI plans the dev environment but does not auto-apply.
 
-Every push runs:
+Typical backend flow:
 
-- `terraform fmt -check -recursive`
-- `terraform init -backend=false`
-- `terraform validate`
-- Checkov
-- `terraform plan` against the dev environment for trusted pushes / PRs
+```bash
+terraform init
+terraform plan -var-file=environments/dev/terraform.tfvars
+terraform apply -var-file=environments/dev/terraform.tfvars
+```
 
-CI does not auto-apply Terraform.
+See [docs/deployment.md](docs/deployment.md) and [DEPLOY.md](DEPLOY.md).
 
-## Additional Docs
+## Security Model Summary
 
-- [Architecture overview](docs/architecture.md)
-- [ADRs](docs/adrs/README.md)
-- [Deployment guide](DEPLOY.md)
+- Cognito user pools authenticate browser users.
+- API Gateway enforces Cognito authorization on query, catalog, and admin ingest routes.
+- Admin ingest trigger checks Cognito groups before queuing SQS work.
+- Lambda IAM policies are scoped to required S3, DynamoDB, SQS, SSM, Bedrock, and log actions where possible.
+- YouTube API key for AWS-managed ingestion is stored as an SSM SecureString placeholder and updated after deploy.
+- S3 buckets block public access; transcript bucket uses default encryption and versioning.
+- Bedrock Guardrails add API-level content controls.
+- CloudTrail records AWS API activity to S3.
+
+See [docs/security.md](docs/security.md).
+
+## Observability Model Summary
+
+- Lambda and API Gateway emit logs to CloudWatch.
+- Query/audit records are stored in DynamoDB with TTL.
+- Retrieval evaluation samples can be stored in DynamoDB.
+- CloudTrail writes AWS account activity to S3.
+- There are no custom CloudWatch alarms or dashboards in this repo yet; that gap is documented in [docs/observability.md](docs/observability.md).
+
+## Cost Controls Summary
+
+- Static frontend avoids a web server.
+- Lambda, API Gateway, DynamoDB on-demand, S3, and Bedrock are pay-per-use.
+- S3-backed retrieval avoids always-on OpenSearch/vector database cost.
+- Answer, planner, and reranker caches reduce repeat Bedrock calls.
+- Local ingestion throttles and batch limits reduce YouTube blocking risk and uncontrolled model usage.
+- GuardDuty is optional and disabled in dev.
+
+See [docs/cost-model.md](docs/cost-model.md).
+
+## Teardown and Cleanup Summary
+
+- Dev buckets use `force_destroy = true`; prod buckets do not.
+- Prod DynamoDB deletion protection is enabled for selected tables.
+- Terraform destroy should be used only after preserving needed transcripts, logs, and audit records.
+- Local secrets live outside git in `.env` or `~/.config/pulpit-ingest.env`.
+
+See [docs/teardown.md](docs/teardown.md).
+
+## Project Structure
+
+```text
+pulpit/
+├── frontend/                    # Original terminal-style prototype UI
+├── frontend-alternative/        # Current deployed static frontend
+├── lambda/
+│   ├── admin-trigger/           # Cognito-protected SQS ingestion trigger
+│   ├── ingest/                  # Legacy/secondary AWS ingestion path
+│   └── query/                   # Query API, catalog endpoint, retrieval logic
+├── modules/
+│   ├── ingestion/               # S3, SQS, EventBridge, ingest Lambda, SSM
+│   ├── query/                   # API Gateway, Cognito, DynamoDB, guardrails, query Lambda
+│   ├── security/                # CloudTrail and optional GuardDuty
+│   └── knowledge-base/          # Previous/experimental KB path, not active in main.tf
+├── environments/
+│   ├── dev/
+│   └── prod/
+├── scripts/
+│   ├── ingest-local.py
+│   ├── rebuild_index.py
+│   ├── evaluate_retrieval.py
+│   ├── run-ingest-batch.sh
+│   ├── install_ingest_cron.sh
+│   └── build-lambda.sh
+├── docs/
+│   ├── architecture.md
+│   ├── reviewer-guide.md
+│   ├── runbook.md
+│   ├── security.md
+│   ├── observability.md
+│   ├── cost-model.md
+│   ├── deployment.md
+│   ├── teardown.md
+│   ├── tradeoffs.md
+│   ├── testing.md
+│   ├── adrs/
+│   └── screenshots/
+├── .github/workflows/ci.yml
+├── DEPLOY.md
+├── main.tf
+├── variables.tf
+├── outputs.tf
+└── wrangler.toml
+```
+
+## Known Limitations
+
+- YouTube transcript retrieval is the hardest constraint; cloud IP blocking is the reason the primary ingestion runner is local.
+- Official YouTube caption download would require channel-owner OAuth 2.0 consent.
+- Transcript quality depends on available YouTube captions.
+- The live app is church-specific and requires Cognito access for archive queries.
+- CORS is currently broad in Terraform (`Access-Control-Allow-Origin: *`) and should be tightened for a production custom domain.
+- Custom CloudWatch alarms, dashboards, WAF, and automated restore drills are not yet implemented.
+- The repo carries both active and legacy paths; `main.tf` uses the low-cost local-ingest architecture, while some AWS ingestion resources remain for reference and admin-triggered queueing.
+
+## What I Would Improve Next
+
+- Move ingestion to the official YouTube captions API if channel-owner OAuth is approved.
+- Add CloudWatch alarms for Lambda errors, API 5xx, DLQ depth, and high Bedrock spend.
+- Restrict CORS to the final Cloudflare Pages/custom domain.
+- Add an explicit restore drill for S3 index rollback and DynamoDB audit export.
+- Add a small browser smoke test for the deployed frontend and API auth path.
+- Revisit OpenSearch Serverless or a managed vector store only if archive size or query latency outgrows the S3 index model.
 
 ## License
 
