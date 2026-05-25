@@ -2042,8 +2042,6 @@ def build_archive_stats(sermons):
 
     top_topics = build_ranked_metadata_terms(sermons, "topics")
     top_lessons = build_ranked_metadata_terms(sermons, "key_themes")
-    if not top_lessons:
-        top_lessons = top_topics
 
     return {
         "video_count": video_count,

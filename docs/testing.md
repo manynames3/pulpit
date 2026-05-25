@@ -30,7 +30,7 @@ Coverage includes:
 - Source snippet bounds.
 - Answer-cache key sensitivity to S3 index markers.
 - Warm index cache clearing when the index marker changes.
-- Archive stats fallback from missing `key_themes` to `topics`.
+- Archive stats keep `key_themes` distinct from `topics`.
 - Chunk diversity for broad keyword searches.
 
 These tests run without live AWS calls by setting test environment variables and patching selected functions.

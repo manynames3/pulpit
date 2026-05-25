@@ -248,7 +248,7 @@ def build_sermon_entry(sermon, existing_entry, chunk_embedding_cache, bedrock):
     transcript = sermon.get("transcript", "") or ""
     transcript_hash = sha256_text(transcript)
     topics = sermon.get("topics", [])
-    key_themes = sermon.get("key_themes") or topics
+    key_themes = sermon.get("key_themes", [])
 
     existing_hash = (existing_entry or {}).get("transcript_hash")
     if existing_hash == transcript_hash and existing_entry and existing_entry.get("embedding"):

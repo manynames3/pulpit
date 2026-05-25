@@ -182,7 +182,7 @@ def test_index_marker_change_clears_warm_index_cache():
         query_service._index_generated_at = original_generated_at
 
 
-def test_archive_stats_falls_back_lessons_to_topics():
+def test_archive_stats_keeps_lessons_distinct_from_topics():
     stats = query_service.build_archive_stats([
         {
             "sermon_id": "first",
@@ -200,8 +200,9 @@ def test_archive_stats_falls_back_lessons_to_topics():
         },
     ])
 
-    assert stats["top_lessons"][0]["label"] == "Grace"
-    assert stats["top_lessons"][0]["count"] == 2
+    assert stats["top_topics"][0]["label"] == "Grace"
+    assert stats["top_topics"][0]["count"] == 2
+    assert stats["top_lessons"] == []
 
 
 def test_retrieve_union_diversifies_broad_keyword_results():
@@ -255,6 +256,6 @@ if __name__ == "__main__":
     test_source_snippets_are_bounded()
     test_answer_cache_key_tracks_index_marker()
     test_index_marker_change_clears_warm_index_cache()
-    test_archive_stats_falls_back_lessons_to_topics()
+    test_archive_stats_keeps_lessons_distinct_from_topics()
     test_retrieve_union_diversifies_broad_keyword_results()
     print("Korean search tests passed")

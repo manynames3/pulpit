@@ -71,7 +71,7 @@ Checks:
 3. Check whether sermon entries have `topics` or `key_themes`.
 4. Rebuild the index if transcript JSON exists but the index is stale.
 
-The frontend has fallbacks for missing `key_themes`, but if both `topics` and `key_themes` are absent, it should show an honest empty state.
+The frontend keeps `topics` and `key_themes` distinct. If lesson metadata is missing, Top 10 Lessons should show an honest empty state instead of duplicating Top 10 Topics.
 
 ## Ingestion Troubleshooting
 

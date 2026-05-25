@@ -1995,6 +1995,7 @@
           catalogNoMatches: "No indexed sermons matched that filter.",
           statsLoading: "Loading archive statistics.",
           insightEmpty: "No repeated metadata is available yet.",
+          lessonInsightEmpty: "Lesson metadata is not available yet.",
           indexedSermon: "Indexed Sermon",
           metadataUnavailable: "Metadata unavailable",
           transcriptReady: "Transcript indexed and ready for archive search.",
@@ -2159,6 +2160,7 @@
           catalogNoMatches: "조건에 맞는 색인 설교가 없습니다.",
           statsLoading: "아카이브 통계를 불러오는 중입니다.",
           insightEmpty: "아직 반복되는 메타데이터가 없습니다.",
+          lessonInsightEmpty: "아직 교훈 메타데이터가 없습니다.",
           indexedSermon: "색인 설교",
           metadataUnavailable: "메타데이터 없음",
           transcriptReady: "전사본이 색인되어 검색 준비가 완료되었습니다.",
@@ -2726,7 +2728,7 @@
         year_start: years[0] || "",
         year_end: years[years.length - 1] || "",
         top_topics: topTopics,
-        top_lessons: topLessons.length ? topLessons : topTopics
+        top_lessons: topLessons
       };
     }
 
@@ -2787,6 +2789,17 @@
       `;
     }
 
+    function insightListsAreIdentical(first, second) {
+      if (!first.length || first.length !== second.length) {
+        return false;
+      }
+
+      return first.every((item, index) => {
+        const other = second[index];
+        return item.label === other.label && item.count === other.count;
+      });
+    }
+
     function renderArchiveInsights() {
       const container = $("archive-insights-grid");
       if (!container) {
@@ -2795,8 +2808,12 @@
 
       const stats = catalogStats || (catalogEntries.length ? buildFallbackArchiveStats(catalogEntries) : null);
       const topTopics = normalizeInsightItems(stats && stats.top_topics);
-      const topLessons = normalizeInsightItems(stats && stats.top_lessons);
+      let topLessons = normalizeInsightItems(stats && stats.top_lessons);
+      if (insightListsAreIdentical(topLessons, topTopics)) {
+        topLessons = [];
+      }
       const emptyInsightMessage = stats ? text("messages.insightEmpty") : text("messages.statsLoading");
+      const emptyLessonMessage = stats ? text("messages.lessonInsightEmpty") : text("messages.statsLoading");
 
       container.innerHTML = `
         <article class="archive-insight-panel">
@@ -2807,7 +2824,7 @@
         <article class="archive-insight-panel">
           <h3>${escapeHtml(text("labels.topLessonsLabel"))}</h3>
           <p>${escapeHtml(text("labels.topLessonsNote"))}</p>
-          ${renderArchiveInsightList(topLessons, emptyInsightMessage)}
+          ${renderArchiveInsightList(topLessons, emptyLessonMessage)}
         </article>
       `;
     }
