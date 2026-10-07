@@ -4,7 +4,7 @@ Serverless bilingual sermon RAG built with AWS Bedrock, S3 Vectors, Lambda, Cogn
 
 [![Pulpit CI](https://github.com/manynames3/pulpit/actions/workflows/ci.yml/badge.svg)](https://github.com/manynames3/pulpit/actions/workflows/ci.yml)
 
-Pulpit is a production-style retrieval application for a Korean-English sermon archive. It ingests YouTube captions, builds a chunked hybrid search index, and serves authenticated, cited answers through a low-idle-cost AWS backend with Terraform-managed infrastructure, audit logging, cache invalidation, and CI validation.
+Pulpit is a production-style retrieval application for a Korean-English sermon archive. It ingests YouTube captions, combines Amazon S3 Vectors semantic search with sharded S3 keyword retrieval, and serves authenticated, cited answers. The low-idle-cost AWS backend includes Terraform-managed infrastructure, versioned archive snapshots, audit logging, index-aware caching, and CI validation.
 
 **Positioning:** A cloud/platform engineering work sample focused on practical serverless architecture, operational ownership, and cost-aware RAG.
 
@@ -21,14 +21,14 @@ Uploading sermon transcripts into a general chat product creates one-off answers
 Pulpit splits the system into three planes:
 
 - A static frontend on Cloudflare Pages.
-- An AWS serverless query path using API Gateway, Cognito, Lambda, DynamoDB, S3, Bedrock models, and Bedrock Guardrails.
-- A local ingestion runner that handles YouTube caption collection, enriches sermon records, generates embeddings, and publishes a versioned S3 search index.
+- An AWS serverless query path using API Gateway, Cognito, Lambda, DynamoDB, S3 Vectors, S3, Bedrock models, and Bedrock Guardrails.
+- A local ingestion runner that handles YouTube caption collection, enriches sermon records, generates embeddings, and publishes validated vector/lexical snapshots with an active catalog manifest.
 
 Retrieval uses Amazon S3 Vectors for semantic candidates and sharded S3 keyword postings for Korean-English lexical matching. Lambda loads selected source chunks rather than every embedding. A small catalog manifest is independent of vector search; versioned snapshots, bilingual expansion, reranking, citations, and index-aware caching preserve the application workflow. See [migration and operating details](docs/s3-vectors-migration.md).
 
 ## Operational Value
 
-- Low idle cost: static frontend, pay-per-use Lambda/API Gateway/DynamoDB/Bedrock, and S3-backed index storage.
+- Low idle cost: static frontend, pay-per-use AWS services, and S3 Vectors without provisioned search compute. Storage, requests, and model calls still incur charges.
 - Real access control: Cognito protects query and catalog endpoints.
 - Auditability: query and response records are written to DynamoDB with TTL.
 - Recovery discipline: Terraform-managed resources, S3 versioning, cache TTLs, and dev teardown support.
@@ -42,17 +42,18 @@ Retrieval uses Amazon S3 Vectors for semantic candidates and sharded S3 keyword 
 | API | API Gateway REST API, Lambda Python 3.12 |
 | Auth | Amazon Cognito user pools and groups |
 | Retrieval | Amazon S3 Vectors, sharded lexical index in S3, Titan embeddings, Lambda reranking |
-| LLM | Amazon Bedrock models and Bedrock Guardrails |
+| LLM | Bedrock Claude Haiku 4.5 answers, Nova Lite planning/reranking, Bedrock Guardrails |
 | Data | S3, DynamoDB cache, DynamoDB query log |
-| Infrastructure | Terraform modules, GitHub Actions |
+| Infrastructure | Terraform modules, Terraform-managed CloudFormation stack for S3 Vectors, GitHub Actions |
 | Ingestion | Python local runner, YouTube Data API, `yt-dlp`, `youtube-transcript-api` |
-| Validation | Python regression tests, Terraform fmt/validate, Checkov, static JS syntax check |
+| Validation | Offline Python regression tests, frontend failure/recovery checks, Terraform fmt/validate, Checkov (soft-fail) |
 
 ## Engineering Highlights
 
 - **Bounded hybrid retrieval.** S3 Vectors retrieves semantic candidates; sharded keyword postings preserve Korean terms without loading every embedding into Lambda.
 - **Snapshot publication and rollback.** Imports validate every vector key before publishing the active manifest. Source chunks and keyword postings are versioned together; the original index remains available for recovery.
 - **Index-aware answer cache.** Cached answers include retrieval version, config version, synonym version, language, and the current S3 index marker so new archive data invalidates stale answers automatically.
+- **Explicit failure recovery.** Catalog failures show errors rather than a zero-record archive. Gateway timeout recovery polls the answer cache without restarting model calls; transient answer-model failures return sources with a warning and a short cache TTL.
 - **Bilingual retrieval quality work.** Query expansion, Korean token normalization, BM25-style chunk scoring, semantic similarity, diversity controls, and source snippets improve Korean-English search behavior.
 - **Auth and audit boundaries.** Cognito protects APIs, admin ingest triggers check Cognito groups, and query records are logged to DynamoDB.
 - **Operationally honest ingestion.** The reliable ingestion path is local because YouTube blocks the caption-scraping path from AWS IP ranges; the cloud ingestion Lambda remains documented as a legacy/secondary path.
@@ -63,6 +64,7 @@ Retrieval uses Amazon S3 Vectors for semantic candidates and sharded S3 keyword 
 Detailed architecture and operating notes:
 
 - [Architecture overview](docs/architecture.md)
+- [S3 Vectors migration, validation, and rollback](docs/s3-vectors-migration.md)
 - [Reviewer guide](docs/reviewer-guide.md)
 - [Deployment](docs/deployment.md)
 - [Runbook](docs/runbook.md)
@@ -82,11 +84,11 @@ Detailed architecture and operating notes:
 | IaC | Terraform root config and modules in `modules/`; `terraform fmt`, `terraform validate`, dev/prod tfvars, explicit plan workflow |
 | CI/CD | GitHub Actions builds Lambda packages, runs Python checks, validates Terraform, runs Checkov, and plans dev infrastructure for trusted events |
 | Security | Cognito authorizer, Cognito groups, scoped Lambda IAM policies, SSM SecureString for YouTube API key, S3 public access blocks, Bedrock Guardrails, CloudTrail |
-| Reliability | SQS ingest queue with DLQ, local ingest throttles, S3 versioning, DynamoDB TTLs, Lambda error handling, explicit rollback/redeploy notes |
+| Reliability | Manifest-last snapshot publication, retained rollback data, cache-only timeout recovery, source-only fallback, SQS ingest DLQ, S3 versioning |
 | Observability | CloudWatch Lambda/API logs by default, DynamoDB query audit log, retrieval eval table, CloudTrail log bucket, documented gaps for alarms/dashboards |
 | Cost | Static frontend, pay-per-use S3 Vectors without provisioned search compute, bounded candidate loading, answer/planner/reranker caches, local batched ingestion |
 | Operations | Runbook, deployment guide, teardown guide, troubleshooting notes, validation commands |
-| Testing | Python retrieval regression tests, py_compile checks, frontend inline JS syntax check, Terraform validation, Checkov scan, optional retrieval golden-set eval |
+| Testing | Korean/English retrieval regressions, snapshot/publication/cache tests, frontend error/polling tests, Terraform validation, optional golden-set eval; see [coverage and gaps](docs/testing.md) |
 | Documentation | Architecture doc, reviewer guide, ADRs, security/observability/cost/testing/deployment/teardown/tradeoff docs |
 
 ## Screenshots
@@ -106,6 +108,7 @@ These are AWS console screenshots already present in the repo, included as evide
 Prerequisites:
 
 - Python 3.12
+- Node.js for frontend validation
 - Terraform 1.5+
 - AWS CLI credentials for deployment or real ingestion
 - `yt-dlp` and `ffmpeg` for local caption ingestion
@@ -113,9 +116,11 @@ Prerequisites:
 Validate the repo without AWS credentials:
 
 ```bash
+python3 -m pip install -r lambda/query/requirements.txt
 python3 scripts/test_korean_search.py
+python3 scripts/test_vector_archive.py
 python3 -m py_compile lambda/query/query_service.py scripts/rebuild_index.py scripts/evaluate_retrieval.py scripts/test_korean_search.py
-awk '/<script>/{flag=1; next} /<\\/script>/{flag=0} flag' frontend-alternative/index.html | node --check
+node scripts/test_frontend.js
 terraform init -backend=false
 terraform fmt -check -recursive
 terraform validate
@@ -175,8 +180,9 @@ Common local checks:
 
 ```bash
 python3 scripts/test_korean_search.py
+python3 scripts/test_vector_archive.py
 python3 -m py_compile lambda/query/query_service.py scripts/rebuild_index.py scripts/evaluate_retrieval.py scripts/test_korean_search.py
-awk '/<script>/{flag=1; next} /<\\/script>/{flag=0} flag' frontend-alternative/index.html | node --check
+node scripts/test_frontend.js
 terraform fmt -check -recursive
 terraform init -backend=false
 terraform validate
@@ -199,8 +205,9 @@ Frontend:
 
 AWS backend:
 
-- Terraform provisions S3, API Gateway, Cognito, Lambda, DynamoDB, CloudTrail, Bedrock Guardrails, SQS, SSM Parameter Store, and optional GuardDuty.
+- Terraform provisions S3, S3 Vectors (through CloudFormation), API Gateway, Cognito, Lambda, DynamoDB, CloudTrail, Bedrock Guardrails, SQS, SSM Parameter Store, and optional GuardDuty.
 - CI plans the dev environment but does not auto-apply.
+- First-time vector deployment requires provisioning and backfilling before switching the query runtime; follow the [two-phase migration procedure](docs/s3-vectors-migration.md#provision-and-publish).
 
 Typical backend flow:
 
@@ -218,6 +225,7 @@ See [docs/deployment.md](docs/deployment.md) and [DEPLOY.md](DEPLOY.md).
 - API Gateway enforces Cognito authorization on query, catalog, and admin ingest routes.
 - Admin ingest trigger checks Cognito groups before queuing SQS work.
 - Lambda IAM policies are scoped to required S3, DynamoDB, SQS, SSM, Bedrock, and log actions where possible.
+- The query role can query/read only its S3 Vectors index; vector writes use separate ingestion/publisher credentials.
 - YouTube API key for AWS-managed ingestion is stored as an SSM SecureString placeholder and updated after deploy.
 - S3 buckets block public access; transcript bucket uses default encryption and versioning.
 - Bedrock Guardrails add API-level content controls.
@@ -249,6 +257,7 @@ See [docs/cost-model.md](docs/cost-model.md).
 - Dev buckets use `force_destroy = true`; prod buckets do not.
 - Prod DynamoDB deletion protection is enabled for selected tables.
 - Terraform destroy should be used only after preserving needed transcripts, logs, and audit records.
+- The vector index and bucket have CloudFormation retention policies and survive Terraform destroy. Delete them explicitly after retention review; old snapshots also require manual cleanup.
 - Local secrets live outside git in `.env` or `~/.config/pulpit-ingest.env`.
 
 See [docs/teardown.md](docs/teardown.md).
@@ -265,7 +274,7 @@ pulpit/
 │   └── query/                   # Query API, catalog endpoint, retrieval logic
 ├── modules/
 │   ├── ingestion/               # S3, SQS, EventBridge, ingest Lambda, SSM
-│   ├── query/                   # API Gateway, Cognito, DynamoDB, guardrails, query Lambda
+│   ├── query/                   # API, auth, cache, guardrails, Lambda, S3 Vectors stack
 │   ├── security/                # CloudTrail and optional GuardDuty
 │   └── knowledge-base/          # Previous/experimental KB path, not active in main.tf
 ├── environments/
@@ -274,12 +283,16 @@ pulpit/
 ├── scripts/
 │   ├── ingest-local.py
 │   ├── rebuild_index.py
+│   ├── publish_vector_archive.py
+│   ├── test_vector_archive.py
+│   ├── test_frontend.js
 │   ├── evaluate_retrieval.py
 │   ├── run-ingest-batch.sh
 │   ├── install_ingest_cron.sh
 │   └── build-lambda.sh
 ├── docs/
 │   ├── architecture.md
+│   ├── s3-vectors-migration.md
 │   ├── reviewer-guide.md
 │   ├── runbook.md
 │   ├── security.md
@@ -307,6 +320,8 @@ pulpit/
 - The live app is church-specific and requires Cognito access for archive queries.
 - CORS is currently broad in Terraform (`Access-Control-Allow-Origin: *`) and should be tightened for a production custom domain.
 - Custom CloudWatch alarms, dashboards, WAF, and automated restore drills are not yet implemented.
+- Catalog metadata still loads in full; common-term lexical postings grow with the archive. Snapshot cleanup is manual, and concurrent publishers are not supported.
+- Cache polling is timeout recovery, not a durable background job queue. Deployed smoke checks do not establish a relevance benchmark or complete real-user browser coverage.
 - The repo carries both active and legacy paths; `main.tf` uses the low-cost local-ingest architecture, while some AWS ingestion resources remain for reference and admin-triggered queueing.
 
 ## What I Would Improve Next
@@ -316,6 +331,7 @@ pulpit/
 - Restrict CORS to the final Cloudflare Pages/custom domain.
 - Add an explicit restore drill for S3 index rollback and DynamoDB audit export.
 - Add a small browser smoke test for the deployed frontend and API auth path.
+- Add catalog pagination, segmented lexical postings, and retention-aware snapshot cleanup as archive growth warrants.
 - Revisit OpenSearch if measured latency, richer full-text search, or filtering requirements outgrow the sharded lexical index.
 
 ## License

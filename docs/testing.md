@@ -1,19 +1,17 @@
 # Testing and Validation
 
-S3 Vectors checks: `python3 scripts/test_vector_archive.py`, also run in CI.
-They cover snapshot filtering, Korean/English postings, source hydration,
-neighbor expansion, and incomplete publication recovery without model calls.
-
-This repo has lightweight automated validation focused on backend retrieval behavior, packaging, Terraform, and static frontend syntax. It does not yet have full unit-test coverage or end-to-end browser automation.
+This repo has lightweight automated validation focused on backend retrieval behavior, snapshot publication, cache handling, frontend failure recovery, packaging, and Terraform. It does not yet have full unit-test coverage or automated real-user end-to-end browser coverage.
 
 ## Local Checks
 
 Run from the repo root:
 
 ```bash
+python3 -m pip install -r lambda/query/requirements.txt
 python3 scripts/test_korean_search.py
+python3 scripts/test_vector_archive.py
 python3 -m py_compile lambda/query/query_service.py scripts/rebuild_index.py scripts/evaluate_retrieval.py scripts/test_korean_search.py
-awk '/<script>/{flag=1; next} /<\\/script>/{flag=0} flag' frontend-alternative/index.html | node --check
+node scripts/test_frontend.js
 terraform fmt -check -recursive
 terraform init -backend=false
 terraform validate
@@ -38,6 +36,17 @@ Coverage includes:
 - Chunk diversity for broad keyword searches.
 
 These tests run without live AWS calls by setting test environment variables and patching selected functions.
+
+## Vector Archive and Cache Tests
+
+File: `scripts/test_vector_archive.py`, also run in CI.
+
+Ten offline tests cover snapshot isolation, metadata-only catalog reads,
+Korean/English postings, source hydration and neighbors, invalid embeddings,
+failed publication recovery, DynamoDB score serialization, rerank candidate
+validation, cache-only polling, and transient answer-model fallback/expiry.
+They do not measure live search relevance. Dated deployment observations and
+their limitations are recorded in the [migration guide](s3-vectors-migration.md#deployment-validation-2026-10-07).
 
 ## Retrieval Evaluation Harness
 
@@ -79,11 +88,16 @@ The build currently packages:
 
 ## Frontend Validation
 
-The deployed frontend is static HTML/CSS/JavaScript. There is no frontend build pipeline. The current automated validation is an inline script syntax check:
+The deployed frontend is static HTML/CSS/JavaScript. There is no frontend build pipeline. The CI check validates inline script syntax and executes the actual async handlers in a Node.js VM with mocked DOM/API responses:
 
 ```bash
-awk '/<script>/{flag=1; next} /<\\/script>/{flag=0} flag' frontend-alternative/index.html | node --check
+node scripts/test_frontend.js
 ```
+
+It checks catalog/query errors, gateway timeout recovery through cache-only
+polls, and the Sources Available state. This is not a rendered browser or
+Cognito login test. One-off Playwright checks used mocked APIs, not a real-user
+session; see the migration guide for deployment validation scope.
 
 Manual smoke:
 
@@ -100,9 +114,9 @@ File: `.github/workflows/ci.yml`
 Validate job:
 
 - build Lambda packages
-- run Python retrieval tests
+- run Python retrieval, vector archive, publication, and cache tests
 - run Python compile checks
-- run frontend JS syntax check
+- run frontend JS syntax and mocked failure/recovery checks
 - run Terraform fmt/validate
 - run Checkov
 
@@ -116,7 +130,7 @@ Plan job:
 ## Known Gaps
 
 - No pytest suite or coverage report.
-- No frontend unit tests.
+- Frontend tests use a mocked DOM, not a real browser or complete UI coverage.
 - No Playwright/Cypress deployed smoke test.
 - No mocked API integration test around API Gateway event shapes.
 - No load test or latency budget.
