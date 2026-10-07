@@ -33,6 +33,7 @@ import requests
 from datetime import datetime, timezone
 from youtube_transcript_api import YouTubeTranscriptApi
 from rebuild_index import rebuild_index
+from publish_vector_archive import publish as publish_vector_archive
 
 # ── CONFIG ────────────────────────────────────────────────────────────────
 #
@@ -494,3 +495,14 @@ if ingested:
     if REBUILD_INDEX_AFTER_INGEST:
         print("\nRefreshing chunked search index...")
         rebuild_index(bucket=BUCKET, region=AWS_REGION)
+        vector_index_arn = os.environ.get("PULPIT_VECTOR_INDEX_ARN")
+        if not vector_index_arn:
+            try:
+                manifest = json.loads(s3.get_object(
+                    Bucket=BUCKET, Key="indexes/retrieval/manifest.json"
+                )["Body"].read())
+                vector_index_arn = manifest["index_arn"]
+            except s3.exceptions.NoSuchKey:
+                pass
+        if vector_index_arn:
+            publish_vector_archive(BUCKET, AWS_REGION, vector_index_arn)

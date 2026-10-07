@@ -2,6 +2,16 @@
   "Version": "2012-10-17",
   "Statement": [
     {
+      "Sid": "PulpitVectorStackReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:DescribeStacks",
+        "cloudformation:GetTemplate",
+        "cloudformation:GetStackPolicy"
+      ],
+      "Resource": "arn:aws:cloudformation:*:*:stack/pulpit-vectors-*/*"
+    },
+    {
       "Sid": "S3ReadOnly",
       "Effect": "Allow",
       "Action": [

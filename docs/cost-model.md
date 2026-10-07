@@ -10,18 +10,18 @@ Pulpit is designed for low idle cost. This document describes cost drivers and c
 | API Gateway | Pay per request | Authenticated endpoints, no polling loop |
 | Lambda | Pay per invocation and duration | Serverless runtime, warm index cache, bounded memory |
 | DynamoDB | On-demand request pricing and storage | TTL on cache, audit, and eval records |
-| S3 | Low-cost object storage and requests | Single index object, lifecycle can be added later |
+| S3 | Object storage and requests | Compressed source/posting shards; small catalog manifest |
 | Bedrock | Pay per model invocation/tokens | Answer cache, planner/reranker cache, retrieval thresholds |
 | CloudTrail | S3 log storage and event delivery costs | Single-region trail, dev teardown |
 | GuardDuty | Optional ongoing cost after trial | Disabled in dev, enabled in prod tfvars |
-| OpenSearch/vector DB | Not used | Avoids always-on search cost for current archive size |
+| S3 Vectors | Storage, uploads, requests, query processing/returned data | No provisioned search cluster; existing embeddings reused |
 
 ## Main Cost Controls
 
 - Static frontend avoids app server cost.
 - Query path uses Lambda and API Gateway instead of always-on compute.
 - DynamoDB tables use pay-per-request mode.
-- Search index is stored in S3 instead of a managed search cluster.
+- S3 Vectors handles semantic retrieval without provisioned search compute; lexical postings and source chunks remain in S3.
 - Titan embeddings are generated at ingest/index time, not on every query when avoidable.
 - Answer cache uses a 30-day TTL.
 - Planner and reranker intermediate outputs use shorter TTLs.
@@ -29,13 +29,16 @@ Pulpit is designed for low idle cost. This document describes cost drivers and c
 - Local ingestion uses batch caps and sleep intervals to avoid runaway transcript and model calls.
 - GuardDuty is optional and disabled in dev.
 
-## Why No Vector Database Yet
+## Why S3 Vectors
 
-The current archive size can fit in a Lambda-friendly S3 index. For this scale, a vector database or OpenSearch Serverless would add fixed cost and operational complexity without enough benefit.
+The legacy JSON archive exceeded the deployed Lambda memory limit. S3 Vectors
+removes embeddings from query memory while retaining a pay-per-use design.
+Bedrock and model calls remain separate charges. See [migration costs and
+snapshot retention](s3-vectors-migration.md).
 
-A migration becomes more attractive if:
+Revisit integrated search infrastructure if:
 
-- the index no longer fits comfortably in Lambda memory
+- keyword posting shards no longer fit comfortably within runtime limits
 - query latency becomes unacceptable
 - concurrent traffic increases materially
 - retrieval needs advanced filtering, pagination, or relevance controls that are awkward in code

@@ -37,3 +37,7 @@ output "retrieval_eval_table_name" {
   description = "DynamoDB table storing retrieval-evaluation samples."
   value       = module.query.retrieval_eval_table_name
 }
+output "vector_index_arn" {
+  description = "S3 Vectors index used by the retrieval snapshot publisher"
+  value       = module.query.vector_index_arn
+}

@@ -1,5 +1,9 @@
 # Runbook
 
+For the current S3 Vectors backend, inspect `indexes/retrieval/manifest.json`,
+the referenced snapshot, and vector query errors. Catalog requests do not read
+`transcripts/index.json`. See [snapshot recovery and publication](s3-vectors-migration.md).
+
 This runbook covers the operational paths that exist in this repo. It does not assume production traffic, an on-call rotation, or custom monitoring that has not been implemented.
 
 ## Normal Deployment Checks
@@ -37,7 +41,7 @@ Checks:
 1. Confirm the user can sign in through Cognito.
 2. Inspect browser console errors from the frontend.
 3. Check API Gateway and query Lambda CloudWatch logs.
-4. Confirm `transcripts/index.json` exists in the transcript bucket.
+4. Confirm `indexes/retrieval/manifest.json` exists in the transcript bucket and references a complete snapshot.
 5. Confirm the query Lambda environment variables match the Terraform outputs.
 6. Check DynamoDB cache behavior if stale answers are suspected.
 
@@ -45,7 +49,7 @@ Useful AWS checks:
 
 ```bash
 aws lambda get-function-configuration --function-name pulpit-query-dev
-aws s3api head-object --bucket pulpit-transcripts-dev-ACCOUNT_ID --key transcripts/index.json
+aws s3api head-object --bucket pulpit-transcripts-dev-ACCOUNT_ID --key indexes/retrieval/manifest.json
 aws dynamodb describe-table --table-name pulpit-cache-dev
 aws dynamodb describe-table --table-name pulpit-queries-dev
 ```
@@ -54,7 +58,7 @@ Expected cache behavior:
 
 - Answers are cached in DynamoDB with TTL.
 - Cache keys include retrieval version, retrieval config version, synonym version, preferred language, and the current S3 index marker.
-- Updating `transcripts/index.json` should cause answer-cache misses for future queries without manually clearing the table.
+- Publishing a new `indexes/retrieval/manifest.json` changes answer-cache keys without manually clearing the table. Updating only the legacy export does not publish new searchable data.
 
 ## Catalog Troubleshooting
 
@@ -67,7 +71,7 @@ Symptoms:
 Checks:
 
 1. Verify `GET /catalog` returns HTTP 200 with a Cognito token.
-2. Verify `transcripts/index.json` includes `sermons`.
+2. Verify the active manifest includes `sermons` and a valid snapshot/index ARN.
 3. Check whether sermon entries have `topics` or `key_themes`.
 4. Rebuild the index if transcript JSON exists but the index is stale.
 
@@ -132,7 +136,7 @@ Frontend:
 Search index:
 
 - S3 versioning is enabled on the transcript bucket.
-- Restore a previous version of `transcripts/index.json` if a bad index was uploaded.
+- Restore a previous version of the active manifest if a bad snapshot was published; retain its referenced source/posting objects and vectors.
 - After restoring the object, the S3 index marker changes and future answer-cache keys will miss.
 
 Audit/cache data:

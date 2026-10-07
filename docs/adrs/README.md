@@ -1,5 +1,7 @@
 # Architecture Decision Records
 
+- [ADR 006: S3 Vectors and versioned retrieval snapshots](006-s3-vectors-snapshots.md)
+
 This directory captures the main architecture decisions behind Pulpit. Each ADR is intentionally short: title, status, context, decision, and consequences.
 
 ## Current ADRs

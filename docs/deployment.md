@@ -7,6 +7,9 @@ Pulpit has two deployment surfaces:
 
 CI validates and plans, but does not auto-apply infrastructure.
 
+For first S3 Vectors deployment, follow the [two-phase migration](s3-vectors-migration.md)
+before switching query Lambda. The active manifest must exist first.
+
 ## Environments
 
 Terraform supports `dev` and `prod` through tfvars:
@@ -70,7 +73,7 @@ The current deployed frontend is `frontend-alternative/`.
 Manual deploy example:
 
 ```bash
-npx wrangler pages deploy frontend-alternative --project-name pulpit-archive
+npx wrangler pages deploy frontend-alternative --project-name pulpit
 ```
 
 The older [DEPLOY.md](../DEPLOY.md) includes Cloudflare dashboard setup details and custom-domain notes.

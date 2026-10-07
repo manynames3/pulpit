@@ -1,6 +1,6 @@
 # Pulpit
 
-Serverless bilingual sermon RAG built with AWS Bedrock, Lambda, Cognito, DynamoDB, S3, Terraform, GitHub Actions, and Cloudflare Pages.
+Serverless bilingual sermon RAG built with AWS Bedrock, S3 Vectors, Lambda, Cognito, DynamoDB, Terraform, GitHub Actions, and Cloudflare Pages.
 
 [![Pulpit CI](https://github.com/manynames3/pulpit/actions/workflows/ci.yml/badge.svg)](https://github.com/manynames3/pulpit/actions/workflows/ci.yml)
 
@@ -10,7 +10,7 @@ Pulpit is a production-style retrieval application for a Korean-English sermon a
 
 **Live demo:** [https://pulpit.pages.dev](https://pulpit.pages.dev)
 
-Verified reachable on 2026-05-24. The app is church-specific and requires Cognito sign-in for archive access.
+Verified reachable on 2026-10-07. The app is church-specific and requires Cognito sign-in for archive access.
 
 ## Problem
 
@@ -24,7 +24,7 @@ Pulpit splits the system into three planes:
 - An AWS serverless query path using API Gateway, Cognito, Lambda, DynamoDB, S3, Bedrock models, and Bedrock Guardrails.
 - A local ingestion runner that handles YouTube caption collection, enriches sermon records, generates embeddings, and publishes a versioned S3 search index.
 
-The design intentionally avoids a managed vector database for the current archive size. Retrieval uses a prebuilt S3 index, Lambda warm-cache reuse, semantic scoring, BM25-style lexical matching, bilingual synonym expansion, reranking, cited source snippets, and answer-cache keys tied to the current index marker.
+Retrieval uses Amazon S3 Vectors for semantic candidates and sharded S3 keyword postings for Korean-English lexical matching. Lambda loads selected source chunks rather than every embedding. A small catalog manifest is independent of vector search; versioned snapshots, bilingual expansion, reranking, citations, and index-aware caching preserve the application workflow. See [migration and operating details](docs/s3-vectors-migration.md).
 
 ## Operational Value
 
@@ -41,7 +41,7 @@ The design intentionally avoids a managed vector database for the current archiv
 | Frontend | Static HTML/CSS/JavaScript, Cloudflare Pages |
 | API | API Gateway REST API, Lambda Python 3.12 |
 | Auth | Amazon Cognito user pools and groups |
-| Retrieval | S3 index, Titan embeddings, Lambda ranking logic |
+| Retrieval | Amazon S3 Vectors, sharded lexical index in S3, Titan embeddings, Lambda reranking |
 | LLM | Amazon Bedrock models and Bedrock Guardrails |
 | Data | S3, DynamoDB cache, DynamoDB query log |
 | Infrastructure | Terraform modules, GitHub Actions |
@@ -50,7 +50,8 @@ The design intentionally avoids a managed vector database for the current archiv
 
 ## Engineering Highlights
 
-- **Serverless RAG without a vector database.** The current archive fits in a Lambda-friendly S3 index, avoiding OpenSearch or external vector-store idle cost.
+- **Bounded hybrid retrieval.** S3 Vectors retrieves semantic candidates; sharded keyword postings preserve Korean terms without loading every embedding into Lambda.
+- **Snapshot publication and rollback.** Imports validate every vector key before publishing the active manifest. Source chunks and keyword postings are versioned together; the original index remains available for recovery.
 - **Index-aware answer cache.** Cached answers include retrieval version, config version, synonym version, language, and the current S3 index marker so new archive data invalidates stale answers automatically.
 - **Bilingual retrieval quality work.** Query expansion, Korean token normalization, BM25-style chunk scoring, semantic similarity, diversity controls, and source snippets improve Korean-English search behavior.
 - **Auth and audit boundaries.** Cognito protects APIs, admin ingest triggers check Cognito groups, and query records are logged to DynamoDB.
@@ -83,7 +84,7 @@ Detailed architecture and operating notes:
 | Security | Cognito authorizer, Cognito groups, scoped Lambda IAM policies, SSM SecureString for YouTube API key, S3 public access blocks, Bedrock Guardrails, CloudTrail |
 | Reliability | SQS ingest queue with DLQ, local ingest throttles, S3 versioning, DynamoDB TTLs, Lambda error handling, explicit rollback/redeploy notes |
 | Observability | CloudWatch Lambda/API logs by default, DynamoDB query audit log, retrieval eval table, CloudTrail log bucket, documented gaps for alarms/dashboards |
-| Cost | Static frontend, pay-per-use AWS services, S3 index instead of search cluster, answer/planner/reranker caches, local batched ingestion |
+| Cost | Static frontend, pay-per-use S3 Vectors without provisioned search compute, bounded candidate loading, answer/planner/reranker caches, local batched ingestion |
 | Operations | Runbook, deployment guide, teardown guide, troubleshooting notes, validation commands |
 | Testing | Python retrieval regression tests, py_compile checks, frontend inline JS syntax check, Terraform validation, Checkov scan, optional retrieval golden-set eval |
 | Documentation | Architecture doc, reviewer guide, ADRs, security/observability/cost/testing/deployment/teardown/tradeoff docs |
@@ -166,7 +167,7 @@ cp scripts/pulpit-ingest.env.example ~/.config/pulpit-ingest.env
 ./scripts/install_ingest_cron.sh backlog "*/30 * * * *"
 ```
 
-The ingestion script fetches YouTube uploads, filters non-sermon content, downloads transcript text, extracts metadata, generates Titan embeddings, uploads sermon JSON to S3, and rebuilds `transcripts/index.json`.
+The ingestion script fetches YouTube uploads, filters non-sermon content, downloads transcripts, extracts metadata, generates Titan embeddings, uploads sermon JSON, and rebuilds the legacy export. When the active vector manifest exists (or `PULPIT_VECTOR_INDEX_ARN` is set), it also publishes a validated S3 Vectors snapshot. Direct rebuilds need the [snapshot publisher](docs/s3-vectors-migration.md) afterward.
 
 ## Test and Validation Commands
 
@@ -236,7 +237,7 @@ See [docs/security.md](docs/security.md).
 
 - Static frontend avoids a web server.
 - Lambda, API Gateway, DynamoDB on-demand, S3, and Bedrock are pay-per-use.
-- S3-backed retrieval avoids always-on OpenSearch/vector database cost.
+- S3 Vectors and sharded S3 postings avoid provisioned search-cluster compute cost.
 - Answer, planner, and reranker caches reduce repeat Bedrock calls.
 - Local ingestion throttles and batch limits reduce YouTube blocking risk and uncontrolled model usage.
 - GuardDuty is optional and disabled in dev.
@@ -315,7 +316,7 @@ pulpit/
 - Restrict CORS to the final Cloudflare Pages/custom domain.
 - Add an explicit restore drill for S3 index rollback and DynamoDB audit export.
 - Add a small browser smoke test for the deployed frontend and API auth path.
-- Revisit OpenSearch Serverless or a managed vector store only if archive size or query latency outgrows the S3 index model.
+- Revisit OpenSearch if measured latency, richer full-text search, or filtering requirements outgrow the sharded lexical index.
 
 ## License
 

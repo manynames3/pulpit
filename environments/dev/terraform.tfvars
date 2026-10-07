@@ -10,4 +10,4 @@ ingest_schedule    = "cron(0 6 ? * MON *)"
 # These are pay-per-query and do not add always-on cost.
 bedrock_model_planner  = "amazon.nova-lite-v1:0"
 bedrock_model_reranker = "amazon.nova-lite-v1:0"
-bedrock_model_answer   = "amazon.nova-lite-v1:0"
+bedrock_model_answer   = "us.anthropic.claude-haiku-4-5-20251001-v1:0"

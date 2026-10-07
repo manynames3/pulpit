@@ -1,5 +1,10 @@
 # Retrieval Quality Iterations
 
+Historical iterations below describe the legacy full-index retrieval path.
+On 2026-10-07 this moved to [S3 Vectors and sharded lexical snapshots](s3-vectors-migration.md)
+after the index exceeded deployed Lambda memory. Bilingual expansion, reranking,
+citations, and caching remain; runtime no longer loads every embedding.
+
 This document summarizes the engineering iterations used to improve Pulpit's sermon search quality. The goal was to make the archive behave less like a literal keyword search and more like a bilingual church librarian: able to understand Korean and English questions, find related sermon evidence, and return cited answers with video sources.
 
 ## Starting Point

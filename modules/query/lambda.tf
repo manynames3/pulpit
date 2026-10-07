@@ -18,22 +18,24 @@ resource "aws_lambda_function" "query" {
   filename         = data.archive_file.query.output_path
   source_code_hash = data.archive_file.query.output_base64sha256
   timeout          = 60  # API Gateway cuts at 29s; Lambda gets 60s for non-API invocations
-  memory_size      = 512 # bumped from 256 — cosine similarity over 500 embeddings needs headroom
+  memory_size      = 512 # Retrieval loads bounded candidates; embeddings stay in S3 Vectors.
 
   environment {
     variables = {
-      BEDROCK_MODEL_PLANNER  = var.bedrock_model_planner
-      BEDROCK_MODEL_RERANKER = var.bedrock_model_reranker
-      BEDROCK_MODEL_ANSWER   = var.bedrock_model_answer
-      TRANSCRIPT_BUCKET      = var.transcript_bucket
-      GUARDRAIL_ID           = aws_bedrock_guardrail.pulpit.guardrail_id
-      GUARDRAIL_VERSION      = aws_bedrock_guardrail.pulpit.version
-      DYNAMODB_TABLE         = aws_dynamodb_table.query_log.name
-      CACHE_TABLE            = aws_dynamodb_table.query_cache.name
-      CONFIG_TABLE           = aws_dynamodb_table.admin_config.name
-      EVAL_TABLE             = aws_dynamodb_table.retrieval_eval.name
-      PASTOR_CONTACT         = var.pastor_contact
-      ENVIRONMENT            = var.environment
+      BEDROCK_MODEL_PLANNER    = var.bedrock_model_planner
+      BEDROCK_MODEL_RERANKER   = var.bedrock_model_reranker
+      BEDROCK_MODEL_ANSWER     = var.bedrock_model_answer
+      TRANSCRIPT_BUCKET        = var.transcript_bucket
+      PULPIT_RETRIEVAL_BACKEND = "s3vectors"
+      PULPIT_INDEX_KEY         = "indexes/retrieval/manifest.json"
+      GUARDRAIL_ID             = aws_bedrock_guardrail.pulpit.guardrail_id
+      GUARDRAIL_VERSION        = aws_bedrock_guardrail.pulpit.version
+      DYNAMODB_TABLE           = aws_dynamodb_table.query_log.name
+      CACHE_TABLE              = aws_dynamodb_table.query_cache.name
+      CONFIG_TABLE             = aws_dynamodb_table.admin_config.name
+      EVAL_TABLE               = aws_dynamodb_table.retrieval_eval.name
+      PASTOR_CONTACT           = var.pastor_contact
+      ENVIRONMENT              = var.environment
     }
   }
 
@@ -123,6 +125,11 @@ resource "aws_iam_role_policy" "query_lambda" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["s3vectors:QueryVectors", "s3vectors:GetVectors"]
+        Resource = aws_cloudformation_stack.retrieval.outputs["IndexArn"]
+      },
       {
         # Read index.json + individual transcripts from S3
         Effect = "Allow"

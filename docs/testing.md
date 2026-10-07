@@ -1,5 +1,9 @@
 # Testing and Validation
 
+S3 Vectors checks: `python3 scripts/test_vector_archive.py`, also run in CI.
+They cover snapshot filtering, Korean/English postings, source hydration,
+neighbor expansion, and incomplete publication recovery without model calls.
+
 This repo has lightweight automated validation focused on backend retrieval behavior, packaging, Terraform, and static frontend syntax. It does not yet have full unit-test coverage or end-to-end browser automation.
 
 ## Local Checks

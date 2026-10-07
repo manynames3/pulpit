@@ -80,7 +80,7 @@ python3 -m http.server 8767 --directory frontend-alternative
 
 ## Tradeoffs Made
 
-- S3 index search is cheaper and simpler than a vector database, but it will need replacement if archive size or latency requirements grow.
+- S3 Vectors handles semantic candidates without provisioned search compute; custom lexical shards preserve Korean matching. The [migration](s3-vectors-migration.md) documents the observed memory failure, publication safety, and remaining shard/catalog limits.
 - Local ingestion is reliable for the current YouTube constraint, but it adds an operator-owned machine to the system.
 - Broad CORS is convenient for early deployment, but production should restrict origins.
 - CloudTrail and logs exist, but custom alarms and dashboards are still a next step.

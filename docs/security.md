@@ -24,6 +24,7 @@ Relevant files:
 Lambda roles are defined per function. Policies grant the actions each function needs for its boundary:
 
 - Query Lambda:
+  - query/read the configured S3 Vectors index, without vector write permissions
   - read transcript/index objects from S3
   - invoke Bedrock models
   - apply the configured Bedrock Guardrail
@@ -69,6 +70,8 @@ Relevant files:
 - S3 transcript and CloudTrail buckets block public access.
 - Transcript bucket has default AES256 server-side encryption.
 - Transcript bucket has versioning enabled.
+- Vector buckets use AES256 encryption and IAM access. Publisher credentials
+  are separate from the query role; browser clients receive no vector access.
 - CloudTrail log file validation is enabled.
 - DynamoDB tables use AWS-managed service encryption by default.
 - Query logs and retrieval eval records use TTL.

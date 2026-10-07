@@ -4,7 +4,7 @@
 
 Pulpit is a serverless sermon retrieval system for a Korean-English archive. The browser is static, identity and query execution live in AWS, and ingestion runs from a local machine because YouTube blocks the caption-scraping path from AWS IP ranges.
 
-The core design choice is to keep the query path low-cost at idle: S3 stores transcript JSON and a chunked `transcripts/index.json`; Lambda loads and ranks that index directly; DynamoDB stores audit logs, answer cache entries, retrieval configuration, and optional retrieval evaluation samples.
+The query path stays inexpensive at idle: S3 stores transcripts, a small catalog manifest, sharded keyword postings, and source chunks; S3 Vectors retrieves semantic candidates. Lambda hydrates selected sermons instead of loading every embedding. DynamoDB stores audit logs, caches, retrieval configuration, and evaluation samples. The legacy `transcripts/index.json` remains an ingestion export and recovery source. See [snapshot design and limitations](s3-vectors-migration.md).
 
 ## C4-Style Container Diagram
 
@@ -22,7 +22,8 @@ flowchart LR
     localRunner["Local Ingest Runner\nscripts/ingest-local.py\nscripts/rebuild_index.py"]
     youtube["YouTube\nuploads playlist and captions"]
     bedrock["Amazon Bedrock\nTitan embeddings\nconfigured LLMs\nGuardrails"]
-    s3["S3 Transcript Bucket\ntranscripts/<year>/*.json\ntranscripts/index.json"]
+    s3["S3 Transcript Bucket\ntranscripts and legacy export\nmanifest, lexical shards, source chunks"]
+    vectors["Amazon S3 Vectors\n256-dimension chunk index\nsnapshot metadata filter"]
     cache["DynamoDB\nanswer, planner, reranker cache"]
     audit["DynamoDB\nquery audit log"]
     config["DynamoDB\nadmin retrieval config\nretrieval eval samples"]
@@ -40,6 +41,7 @@ flowchart LR
     api --> adminLambda
 
     queryLambda --> s3
+    queryLambda --> vectors
     queryLambda --> cache
     queryLambda --> audit
     queryLambda --> config
@@ -55,6 +57,7 @@ flowchart LR
     localRunner --> youtube
     localRunner --> bedrock
     localRunner --> s3
+    localRunner --> vectors
 
     terraform --> api
     terraform --> cognito
@@ -63,6 +66,7 @@ flowchart LR
     terraform --> ingestQueue
     terraform --> ingestLambda
     terraform --> s3
+    terraform --> vectors
     terraform --> cache
     terraform --> audit
     terraform --> config
@@ -79,10 +83,11 @@ flowchart LR
 3. The browser calls API Gateway with the Cognito ID token.
 4. API Gateway validates the token through the Cognito user pool authorizer.
 5. The query Lambda:
-   - reads a cheap S3 `HeadObject` marker for `transcripts/index.json`
+   - reads a cheap S3 `HeadObject` marker for `indexes/retrieval/manifest.json`
    - checks the DynamoDB answer cache using question, language, retrieval version, config version, synonym version, and index marker
-   - loads `transcripts/index.json` from S3 when needed and reuses it in the warm Lambda execution environment
-   - expands bilingual query terms and retrieves chunks with semantic and BM25-style lexical scoring
+   - loads the small catalog manifest when needed
+   - expands bilingual terms, queries S3 Vectors with the snapshot filter, and retrieves lexical candidates from relevant S3 posting shards
+   - loads source chunks only for selected sermons; compressed-object cache is bounded to 8 MB
    - applies diversity controls so one sermon cannot dominate broad searches
    - optionally uses cached planner/reranker outputs to reduce repeat model calls
    - calls Bedrock Guardrails and the configured Bedrock answer model
@@ -92,7 +97,7 @@ flowchart LR
 ### Catalog Flow
 
 1. The frontend calls `GET /catalog` with Cognito auth.
-2. The query Lambda reads the same S3 index.
+2. The query Lambda reads only the catalog manifest, without loading embeddings or querying vectors.
 3. The response includes sermon metadata and archive statistics.
 4. The frontend computes safe fallbacks when optional metadata such as `key_themes` is missing.
 
@@ -102,7 +107,8 @@ flowchart LR
 2. The script lists YouTube uploads, filters non-sermon and non-lead-pastor content, and fetches caption text.
 3. Sermon JSON is written to S3 under `transcripts/<year>/`.
 4. `scripts/rebuild_index.py` chunks transcripts, enriches searchable metadata, reuses unchanged embeddings, validates embedding completeness, and publishes `transcripts/index.json`.
-5. Query Lambda answer-cache keys change automatically when the S3 index marker changes.
+5. Local ingestion uploads vectors, verifies every key and filtered search, uploads lexical/source snapshot files, and publishes the active manifest last.
+6. Answer-cache keys change when the manifest marker changes. Old snapshots remain available for rollback.
 
 The repo also contains an AWS ingest Lambda, SQS queue, and DLQ. That path is useful for the admin-triggered workflow and documents the original cloud approach, but the local runner is the reliable ingestion path today.
 
@@ -119,6 +125,7 @@ The repo also contains an AWS ingest Lambda, SQS queue, and DLQ. That path is us
 
 - Region: `us-east-1`.
 - Provisioned with Terraform.
+- S3 Vectors is provisioned through a Terraform-managed CloudFormation stack using the existing AWS 5.x provider.
 - Active modules:
   - `modules/ingestion`: transcript bucket, SQS queue, DLQ, EventBridge rule, ingest Lambda, SSM parameter.
   - `modules/query`: API Gateway, Cognito, Lambda functions, DynamoDB tables, Bedrock Guardrails.
@@ -143,6 +150,7 @@ The repo also contains an AWS ingest Lambda, SQS queue, and DLQ. That path is us
 | Query Lambda | Retrieval, answer synthesis, cache reads/writes, audit logging, catalog response |
 | Admin Trigger Lambda | Staff/admin group check and SQS enqueue for ingestion |
 | S3 | Transcript JSON, chunked index, CloudTrail logs |
+| S3 Vectors | Managed semantic candidate retrieval; immutable snapshot metadata separates archive revisions |
 | DynamoDB | Cache, audit log, admin config, retrieval eval samples |
 | Bedrock | Embeddings, metadata extraction, answer generation, guardrails |
 | SQS/DLQ | Admin-triggered ingest buffering and failed ingest retention |
@@ -158,6 +166,7 @@ sequenceDiagram
     participant API as API Gateway
     participant Lambda as Query Lambda
     participant S3
+    participant Vectors as S3 Vectors
     participant Cache as DynamoDB Cache
     participant Bedrock
     participant Audit as DynamoDB Audit
@@ -167,12 +176,14 @@ sequenceDiagram
     Browser->>API: POST /query with token
     API->>Cognito: Validate token
     API->>Lambda: Proxy event with claims
-    Lambda->>S3: HeadObject transcripts/index.json
+    Lambda->>S3: HeadObject retrieval manifest
     Lambda->>Cache: Get answer cache item
     alt cache hit
         Cache-->>Lambda: Cached cited answer
     else cache miss
-        Lambda->>S3: GetObject transcripts/index.json
+        Lambda->>S3: Get manifest and relevant lexical shards
+        Lambda->>Vectors: QueryVectors with snapshot filter
+        Lambda->>S3: Get selected sermon chunks
         Lambda->>Bedrock: Planner/reranker/answer calls as needed
         Lambda->>Cache: Put cache entries with TTL
     end
@@ -210,7 +221,9 @@ flowchart LR
 
 - YouTube blocks the current caption-scraping path from AWS IP ranges.
 - Official YouTube captions API download requires channel-owner OAuth 2.0 consent.
-- The S3 index approach depends on the archive staying within Lambda memory and latency limits.
+- Embeddings stay outside Lambda memory. Lexical shards, common-term postings, and catalog metadata still grow and need measurement/pagination as scale increases.
+- Local ingestion publishes retrieval snapshots; the legacy AWS ingestion Lambda does not.
+- Snapshot retention supports rollback but currently requires manual cleanup.
 - Bedrock calls are pay-per-use, so caching and retrieval gating matter.
 - The live app is church-specific and not a general public chatbot.
 - Terraform currently uses broad CORS headers; production hardening should restrict origins to the final Cloudflare/custom domain.

@@ -15,9 +15,8 @@ module "ingestion" {
   ingest_schedule    = var.ingest_schedule
 }
 
-# Knowledge Base module removed for v1 pilot — see modules/knowledge-base/bedrock-kb.tf
-# Query Lambda reads directly from S3 for the 2026-only sermon set (~16 sermons)
-# Re-enable when expanding to full archive and adding a vector store backend
+# Custom hybrid retrieval uses S3 Vectors and sharded lexical snapshots.
+# The experimental Bedrock Knowledge Base module remains inactive.
 
 module "query" {
   source                 = "./modules/query"

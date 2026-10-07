@@ -9,6 +9,7 @@ import json
 import traceback
 
 from query_service import answer_question, build_catalog_response, response
+from archive_store import ArchiveUnavailable
 
 
 def lambda_handler(event, context):
@@ -31,8 +32,12 @@ def lambda_handler(event, context):
         user_id = claims.get("sub", "anonymous")
         user_groups = claims.get("cognito:groups", "member")
 
-        return response(200, answer_question(question, user_id, user_groups))
+        result = answer_question(question, user_id, user_groups, cache_only=body.get("cacheOnly") is True)
+        return response(202 if result.get("processing") else 200, result)
 
+    except ArchiveUnavailable as e:
+        print(f"Archive unavailable: {e}")
+        return response(503, {"error": "The archive is temporarily unavailable. Please try again."})
     except Exception as e:
         print(f"Error: {e}")
         traceback.print_exc()

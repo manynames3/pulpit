@@ -2,23 +2,23 @@
 
 This project is intentionally pragmatic. The goal was a credible, low-cost sermon archive system, not a maximal cloud reference architecture.
 
-## S3 Index Instead of Managed Search
+## S3 Vectors and Custom Lexical Search
 
 Decision:
 
-- Store transcript JSON and a chunked search index in S3.
-- Load and rank the index inside Lambda.
+- Store transcripts, compressed lexical postings, and source chunks in S3.
+- Retrieve semantic candidates through S3 Vectors and hydrate selected sermons.
 
 Why:
 
-- Current archive size is small enough for this model.
-- It avoids always-on OpenSearch or vector database cost.
+- The full JSON index exceeded the deployed Lambda memory limit.
+- S3 Vectors avoids provisioned search compute while decoupling embeddings from query memory.
 - Retrieval logic can be tuned directly in Python.
 
 Cost:
 
-- Lambda memory and latency become the scaling limit.
-- Large archives will need a dedicated search backend.
+- Lexical posting shards and catalog metadata still grow with the archive.
+- Retained snapshots require explicit cleanup.
 - Search operations are application code rather than a managed search query language.
 
 ## Local Ingestion Instead of Fully Cloud Ingestion

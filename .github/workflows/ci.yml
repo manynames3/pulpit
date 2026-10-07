@@ -49,10 +49,12 @@ jobs:
         run: python -m py_compile lambda/query/query_service.py scripts/rebuild_index.py scripts/evaluate_retrieval.py scripts/test_korean_search.py
 
       - name: Retrieval Regression Tests
-        run: python scripts/test_korean_search.py
+        run: |
+          python scripts/test_korean_search.py
+          python scripts/test_vector_archive.py
 
       - name: Frontend JavaScript Syntax Check
-        run: awk '/<script>/{flag=1; next} /<\/script>/{flag=0} flag' frontend-alternative/index.html | node --check
+        run: node scripts/test_frontend.js
 
       - name: Terraform Format Check
         run: terraform fmt -check -recursive

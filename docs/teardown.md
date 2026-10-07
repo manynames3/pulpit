@@ -15,6 +15,8 @@ Export anything that must be retained:
 
 - transcript JSON under `transcripts/`
 - `transcripts/index.json`
+- `indexes/retrieval/manifest.json`, snapshot objects, and vectors if the legacy
+  embedding export will not be retained
 - DynamoDB query audit records
 - CloudTrail logs
 - retrieval eval samples if useful
@@ -34,6 +36,10 @@ Destroy:
 ```bash
 terraform destroy -var-file=environments/dev/terraform.tfvars
 ```
+
+S3 Vectors resources are retained by CloudFormation, including in dev. Explicitly
+delete the index and then the empty vector bucket after backup/retention review.
+See [snapshot recovery and cleanup](s3-vectors-migration.md).
 
 Then remove local-only files if appropriate:
 

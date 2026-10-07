@@ -2954,7 +2954,13 @@
         }
 
         const data = await response.json();
-        catalogEntries = (data.sermons || []).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+        if (!response.ok) {
+          throw new Error(data.error || data.message || `HTTP ${response.status}`);
+        }
+        if (!Array.isArray(data.sermons)) {
+          throw new Error(text("messages.catalogUnavailable"));
+        }
+        catalogEntries = data.sermons.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
         const fallbackStats = buildFallbackArchiveStats(catalogEntries);
         catalogStats = {
           ...fallbackStats,
@@ -3498,7 +3504,7 @@
       setStatus("searchingArchive", true);
 
       try {
-        const response = await fetch(API_URL, {
+        let response = await fetch(API_URL, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -3510,7 +3516,18 @@
           })
         });
 
-        const data = await response.json();
+        let data = await response.json();
+        // API Gateway can time out before Lambda finishes. Poll only the cache
+        // so waiting for that answer does not start another Bedrock workflow.
+        for (let attempt = 0; (response.status === 504 || response.status === 202) && attempt < 15; attempt += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          response = await fetch(API_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: idToken },
+            body: JSON.stringify({ question, preferredLanguage: currentLanguage, cacheOnly: true })
+          });
+          data = await response.json();
+        }
         currentAnswerSources = Array.isArray(data.sources) ? [...data.sources] : [];
 
         if (response.status === 401) {
@@ -3522,7 +3539,16 @@
           return;
         }
 
-        setAnswerText(data.answer || data.error || text("messages.noResponse"));
+        if (!response.ok) {
+          throw new Error(data.error || data.message || `HTTP ${response.status}`);
+        }
+        if (!data.answer) {
+          throw new Error(data.error || text("messages.noResponse"));
+        }
+        setAnswerText(data.answer);
+        if (data.answer_generation_unavailable) {
+          $("answer-state").textContent = currentLanguage === "ko" ? "설교 검색 완료" : "Sources Available";
+        }
         renderSources(currentAnswerSources);
         setStatus("archiveReady");
         $("question-input").value = "";

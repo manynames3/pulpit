@@ -1,12 +1,12 @@
 """
 Pulpit — Query Lambda v3
 
-Chunked hybrid search over the sermon archive using a prebuilt S3 index.
-Zero baseline cost — no OpenSearch, no Pinecone, no vector database.
+Chunked hybrid search using S3 Vectors and sharded S3 lexical snapshots.
+The legacy full-index reader remains available for explicit rollback.
 
 How it works:
 1. Check DynamoDB cache — identical questions return instantly
-2. Load pre-computed chunked index from S3 (one GET, cached in Lambda global)
+2. Load catalog manifest and query S3 Vectors plus sharded keyword postings
 3. Embed the question via Titan Embed Text v2
 4. Hybrid rank transcript chunks with semantic + lexical signals
 5. Collapse the best chunks back to sermons
@@ -21,12 +21,15 @@ import math
 import hashlib
 import re
 import unicodedata
+import time
 import boto3
 from collections import Counter
 from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 
 from botocore.exceptions import ClientError
+from archive_store import ArchiveStore, ArchiveUnavailable, english_token
 
 s3       = boto3.client("s3")
 bedrock  = boto3.client("bedrock-runtime")
@@ -38,6 +41,10 @@ ANSWER_MODEL_ID   = os.environ["BEDROCK_MODEL_ANSWER"]
 EMBED_MODEL_ID    = "amazon.titan-embed-text-v2:0"
 BUCKET            = os.environ["TRANSCRIPT_BUCKET"]
 INDEX_KEY         = os.environ.get("PULPIT_INDEX_KEY", "transcripts/index.json")
+RETRIEVAL_BACKEND = os.environ.get("PULPIT_RETRIEVAL_BACKEND", "legacy")
+archive_store = ArchiveStore(s3, boto3.client("s3vectors") if RETRIEVAL_BACKEND == "s3vectors" else None,
+                             BUCKET, INDEX_KEY)
+_archive_manifest = None
 GUARDRAIL_ID      = os.environ["GUARDRAIL_ID"]
 GUARDRAIL_VER     = os.environ["GUARDRAIL_VERSION"]
 LOG_TABLE         = os.environ["DYNAMODB_TABLE"]
@@ -66,7 +73,7 @@ MIN_RELEVANCE_SCORE = 0.35
 EXPANDED_RELEVANCE_SCORE = 0.30
 MIN_HYBRID_SCORE = 0.28
 MIN_CHUNK_SEMANTIC_SCORE = 0.22
-RETRIEVAL_VERSION = "v16-bm25-synonym-snippets"
+RETRIEVAL_VERSION = "v18-s3vectors-sharded-lexical"
 TOKEN_RE = re.compile(r"[0-9A-Za-z가-힣]+")
 ASCII_TERM_RE = re.compile(r"^[a-z0-9]+$")
 HANGUL_RE = re.compile(r"[가-힣]")
@@ -339,7 +346,7 @@ _retrieval_config_loaded_at = None
 _query_variant_cache = {}
 
 
-def answer_question(question, user_id="anonymous", user_groups="member"):
+def answer_question(question, user_id="anonymous", user_groups="member", cache_only=False):
     """Run the sermon archive query workflow and return a JSON-serializable result."""
     question = (question or "").strip()
     answer_language = answer_language_for_question(question)
@@ -359,12 +366,18 @@ def answer_question(question, user_id="anonymous", user_groups="member"):
     cached = check_cache(question, answer_language, retrieval_config, index_marker)
     if cached:
         return {**cached, "cached": True, "answer_language": answer_language}
+    if cache_only:
+        return {"processing": True}
 
     # 2. Analyze the natural-language request before retrieval.
+    stage_start = time.perf_counter()
     question_analysis = analyze_question(question, bedrock, retrieval_config)
+    print(f"Planner duration_ms={int((time.perf_counter() - stage_start) * 1000)}")
 
     # 3. Semantic search across full archive.
+    stage_start = time.perf_counter()
     sermons = find_relevant_sermons(question, retrieval_config, question_analysis)
+    print(f"Retrieval and rerank duration_ms={int((time.perf_counter() - stage_start) * 1000)}")
     if not sermons:
         return {
             "answer": no_results_answer(answer_language),
@@ -375,7 +388,22 @@ def answer_question(question, user_id="anonymous", user_groups="member"):
     # 4. Generate answer.
     sermon_context = build_sermon_context(sermons)
     prompt         = f"{sermon_context}\n\nQuestion: {question}"
-    answer         = invoke_bedrock(prompt, answer_language)
+    stage_start = time.perf_counter()
+    answer_generation_unavailable = False
+    try:
+        answer = invoke_bedrock(prompt, answer_language)
+    except ClientError as error:
+        code = error.response.get("Error", {}).get("Code", "")
+        if code not in {"ServiceUnavailableException", "ThrottlingException", "ModelTimeoutException"}:
+            raise
+        print(f"Answer model unavailable: {code}; returning retrieved sources")
+        answer_generation_unavailable = True
+        answer = (
+            "설교 검색은 완료되었지만 답변 생성 서비스가 일시적으로 응답하지 않습니다. 아래 설교와 발췌문을 확인하거나 잠시 후 다시 시도해 주세요."
+            if answer_language == "ko" else
+            "Relevant sermons were found, but answer generation is temporarily unavailable. Review the sermons and excerpts below, or try again shortly."
+        )
+    print(f"Answer duration_ms={int((time.perf_counter() - stage_start) * 1000)}")
 
     # 5. Cache + audit log.
     sources = [
@@ -392,6 +420,7 @@ def answer_question(question, user_id="anonymous", user_groups="member"):
         "sermons_searched": len(sermons),
         "sources": sources,
         "answer_language": answer_language,
+        "answer_generation_unavailable": answer_generation_unavailable,
     }
     cache_answer(question, result, answer_language, retrieval_config, index_marker)
     log_query(
@@ -524,6 +553,9 @@ def find_relevant_sermons(question, retrieval_config=None, question_analysis=Non
     if not index:
         return []
 
+    if RETRIEVAL_BACKEND == "s3vectors":
+        return find_relevant_sermons_from_vectors(index, question, retrieval_config, question_analysis)
+
     if any(entry.get("chunks") for entry in index):
         chunk_results = find_relevant_sermons_from_chunks(index, question, retrieval_config, question_analysis)
         if chunk_results:
@@ -531,6 +563,56 @@ def find_relevant_sermons(question, retrieval_config=None, question_analysis=Non
 
     entries_with_embeddings = [e for e in index if e.get("embedding")]
     return find_relevant_sermons_by_sermon_embedding(index, entries_with_embeddings, question, retrieval_config)
+
+
+def find_relevant_sermons_from_vectors(index, question, retrieval_config, question_analysis):
+    manifest = _archive_manifest
+    entries = {entry["sermon_id"]: entry for entry in index}
+    candidates = {}
+    literal = is_literal_keyword_query(question)
+    for subquery in subqueries_for_retrieval(question, question_analysis)[:3]:
+        variants = dedupe_strings([subquery] + static_query_variants(subquery) + sorted(expand_query(subquery)))[:QUERY_BUNDLE_LIMIT]
+        terms = collect_search_terms(variants)[:48]
+        lexical = archive_store.lexical_candidates(manifest, terms, ENGLISH_LEXICAL_ALIASES, term_count)
+        embedding = embed_text(" ".join(variants[:5]))
+        semantic = archive_store.semantic_candidates(manifest, embedding) if embedding else []
+        for cid, sid, score in lexical:
+            if sid not in entries:
+                continue
+            hit = candidates.setdefault(cid, {"entry": entries[sid], "sermon_id": sid,
+                "chunk_id": cid, "semantic_score": 0.0, "lexical_score": 0.0})
+            hit["lexical_score"] = max(hit["lexical_score"], score)
+        for cid, sid, score in semantic:
+            if sid not in entries:
+                continue
+            hit = candidates.setdefault(cid, {"entry": entries[sid], "sermon_id": sid,
+                "chunk_id": cid, "semantic_score": 0.0, "lexical_score": 0.0})
+            hit["semantic_score"] = max(hit["semantic_score"], score)
+    for hit in candidates.values():
+        hit["score"] = hit["combined_score"] = hit["semantic_score"] + lexical_bonus(hit["lexical_score"])
+    ranked = sorted(candidates.values(), key=lambda h: h["score"], reverse=True)
+    if literal:
+        ranked = [h for h in ranked if h["lexical_score"] > 0]
+    ranked = diversify_chunk_hits(ranked, top_n=CHUNK_CANDIDATE_LIMIT)
+    if not ranked:
+        return []
+    hydrated = archive_store.hydrate(manifest, [h["sermon_id"] for h in ranked])
+    by_chunk = {chunk_identifier(entry, chunk): (entry, chunk)
+                for entry in hydrated for chunk in entry["chunks"]}
+    hits = []
+    primary_terms = extract_literal_terms(question)
+    for hit in ranked:
+        if hit["chunk_id"] not in by_chunk:
+            raise ArchiveUnavailable("Snapshot contains a missing source chunk")
+        entry, chunk = by_chunk[hit["chunk_id"]]
+        primary = chunk_lexical_match_score(entry, primary_terms, chunk)
+        combined = hit["score"] + primary_lexical_bonus(primary)
+        if hit["semantic_score"] < MIN_CHUNK_SEMANTIC_SCORE and hit["lexical_score"] <= 0:
+            continue
+        hits.append(build_chunk_hit(entry, chunk, hit["semantic_score"], hit["lexical_score"], combined, primary))
+    print(f"S3 Vectors retrieval: {len(candidates)} candidates, {len(hits)} selected chunks")
+    expanded = expand_neighbors(hits, flatten_index_chunks(hydrated), window=1)
+    return collapse_chunk_hits_to_sermons(rerank_evidence_chunks(question, question_analysis or {}, expanded), retrieval_config)
 
 
 def find_relevant_sermons_by_sermon_embedding(index, entries_with_embeddings, question, retrieval_config=None):
@@ -802,13 +884,13 @@ def rerank_evidence_chunks(question, question_analysis, chunk_hits):
             return ordered + remaining
 
     payload_lines = []
-    for hit in candidates:
+    for candidate_id, hit in enumerate(candidates, 1):
         entry = hit.get("entry", {})
         chunk = hit.get("chunk", {})
         text = re.sub(r"\s+", " ", chunk.get("text", "")).strip()[:RERANK_SNIPPET_CHAR_LIMIT]
         payload_lines.append(
             json.dumps({
-                "chunk_id": hit.get("chunk_id", ""),
+                "candidate_id": candidate_id,
                 "title": entry.get("title", ""),
                 "date": entry.get("date", ""),
                 "scripture_refs": entry.get("scripture_references", []),
@@ -819,8 +901,9 @@ def rerank_evidence_chunks(question, question_analysis, chunk_hits):
 
     prompt = (
         "You rerank sermon evidence chunks for a bilingual church sermon archive.\n"
-        "Return ONLY a JSON object with this exact shape: {\"chunk_ids\":[\"chunk id\"]}\n"
-        "Order chunk_ids from most useful to least useful for answering the user question.\n"
+        "Return ONLY a JSON object with this exact shape: {\"candidate_ids\":[1,2]}\n"
+        "Order the integer candidate_ids from most useful to least useful for answering the user question.\n"
+        "Include every candidate ID exactly once, including less relevant candidates.\n"
         "Prefer chunks that directly address the question over generic similarity.\n"
         "Do not add IDs that are not present.\n\n"
         f"Question type: {question_analysis.get('type', 'detailed') if isinstance(question_analysis, dict) else 'detailed'}\n"
@@ -837,7 +920,11 @@ def rerank_evidence_chunks(question, question_analysis, chunk_hits):
         )
         raw = resp["output"]["message"]["content"][0]["text"]
         parsed = extract_json_object(raw)
-        ordered_ids = clean_string_list((parsed or {}).get("chunk_ids") if isinstance(parsed, dict) else [])
+        numbers = parsed.get("candidate_ids", []) if isinstance(parsed, dict) else []
+        ordered_ids = list(dict.fromkeys(
+            candidates[number - 1]["chunk_id"] for number in numbers
+            if isinstance(number, int) and not isinstance(number, bool) and 1 <= number <= len(candidates)
+        )) if isinstance(numbers, list) else []
         if not ordered_ids:
             return candidates
 
@@ -1484,31 +1571,7 @@ def normalize_english_lexical_token(token):
     if not ASCII_TERM_RE.fullmatch(token or ""):
         return token
 
-    if token in ENGLISH_LEXICAL_ALIASES:
-        return ENGLISH_LEXICAL_ALIASES[token]
-
-    if len(token) > 5 and token.endswith("ies"):
-        return token[:-3] + "y"
-
-    if len(token) > 5 and token.endswith("ing"):
-        base = token[:-3]
-        if len(base) >= 3 and base[-1] == base[-2]:
-            base = base[:-1]
-        return base
-
-    if len(token) > 4 and token.endswith("ed"):
-        base = token[:-2]
-        if len(base) >= 3 and base[-1] == base[-2]:
-            base = base[:-1]
-        return base
-
-    if len(token) > 4 and token.endswith("es"):
-        return token[:-2]
-
-    if len(token) > 3 and token.endswith("s"):
-        return token[:-1]
-
-    return token
+    return english_token(token, ENGLISH_LEXICAL_ALIASES)
 
 
 def lexical_bonus(score):
@@ -1723,12 +1786,14 @@ def get_index_cache_marker():
         return marker
     except Exception as e:
         print(f"Index marker read error: {e}")
+        if RETRIEVAL_BACKEND == "s3vectors":
+            raise ArchiveUnavailable("Archive manifest is unavailable") from e
         return _index_marker or f"{INDEX_KEY}:unknown"
 
 
 def get_sermon_index():
     """Load index.json with Lambda-global caching."""
-    global _sermon_index, _index_loaded_at, _index_generated_at
+    global _sermon_index, _index_loaded_at, _index_generated_at, _archive_manifest
     now = datetime.now(timezone.utc)
 
     if _sermon_index is not None and _index_loaded_at:
@@ -1738,6 +1803,13 @@ def get_sermon_index():
 
     print("Loading sermon index from S3...")
     try:
+        if RETRIEVAL_BACKEND == "s3vectors":
+            get_index_cache_marker()
+            _archive_manifest = archive_store.load_manifest()
+            _sermon_index = _archive_manifest["sermons"]
+            _index_loaded_at = now
+            _index_generated_at = _archive_manifest.get("generated_at", "")
+            return _sermon_index
         raw    = s3.get_object(Bucket=BUCKET, Key=INDEX_KEY)
         data   = json.loads(raw["Body"].read())
         _sermon_index    = merge_external_chunk_index(data.get("sermons", []))
@@ -1747,10 +1819,14 @@ def get_sermon_index():
               f"generated {data.get('generated_at', 'unknown')}")
         return _sermon_index
     except s3.exceptions.NoSuchKey:
+        if RETRIEVAL_BACKEND == "s3vectors":
+            raise ArchiveUnavailable("Archive manifest is missing")
         print("No index.json found — run ingest script to build it")
         return []
     except Exception as e:
         print(f"Error loading index: {e}")
+        if RETRIEVAL_BACKEND == "s3vectors":
+            raise ArchiveUnavailable("Archive snapshot could not be loaded") from e
         return []
 
 
@@ -2223,6 +2299,8 @@ def check_cache(question, preferred_language="en", retrieval_config=None, index_
         table = dynamodb.Table(CACHE_TABLE)
         item  = table.get_item(Key={"questionHash": question_hash(question, preferred_language, retrieval_config, index_marker)}).get("Item")
         if item:
+            if int(item.get("expiresAt", 0)) <= int(datetime.now(timezone.utc).timestamp()):
+                return None
             if item.get("cacheType") not in (None, "answer"):
                 return None
             if item.get("configVersion") != retrieval_config_version(retrieval_config):
@@ -2249,7 +2327,8 @@ def check_cache(question, preferred_language="en", retrieval_config=None, index_
             return {
                 "answer":           item["answer"],
                 "sermons_searched": int(item.get("sermons_searched", 0)),
-                "sources":          sources
+                "sources":          json.loads(json.dumps(sources, default=float)),
+                "answer_generation_unavailable": bool(item.get("answer_generation_unavailable", False)),
             }
     except Exception as e:
         print(f"Cache read error: {e}")
@@ -2266,13 +2345,14 @@ def cache_answer(question, result, preferred_language="en", retrieval_config=Non
             "question":         question,
             "preferredLanguage": normalize_language(preferred_language),
             "answer":           result["answer"],
+            "answer_generation_unavailable": bool(result.get("answer_generation_unavailable", False)),
             "sermons_searched": result.get("sermons_searched", 0),
-            "sources":          result.get("sources", []),
+            "sources":          json.loads(json.dumps(result.get("sources", [])), parse_float=Decimal),
             "retrievalVersion": RETRIEVAL_VERSION,
             "configVersion":    retrieval_config_version(retrieval_config),
             "indexMarker":      str(index_marker or "index-unknown"),
             "cachedAt":         now.isoformat(),
-            "expiresAt":        int(now.timestamp()) + (CACHE_TTL_DAYS * 86400)
+            "expiresAt":        int(now.timestamp()) + (60 if result.get("answer_generation_unavailable") else CACHE_TTL_DAYS * 86400)
         })
     except Exception as e:
         print(f"Cache write error: {e}")

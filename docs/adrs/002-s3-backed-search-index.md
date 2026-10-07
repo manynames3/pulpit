@@ -1,6 +1,6 @@
 # ADR-002 — Store the search index in S3 instead of using a managed search cluster
 
-**Status:** Accepted
+**Status:** Superseded for runtime retrieval by [ADR 006](006-s3-vectors-snapshots.md), 2026-10-07. The legacy export remains for ingestion and recovery.
 
 ## Context
 
